@@ -32,3 +32,4 @@ title_id_map.csv
 .superpowers/
 .claude/
 /docs/
+.envrc
