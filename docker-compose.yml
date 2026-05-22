@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: imbuo_parent_db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: imbuo_parent
+      POSTGRES_USER: imbuo
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

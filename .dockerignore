@@ -1,0 +1,44 @@
+# Build context excludes — keep the image build lean and reproducible.
+.git
+.github
+.idea
+.vscode
+.zed
+.fleet
+.nova
+
+# Deps / build outputs — installed/built inside the Dockerfile.
+vendor
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.expo
+public/build
+public/hot
+public/storage
+bootstrap/cache/*.php
+
+# Local-only env + data — never bake these into the image.
+.env
+.env.*
+mnsa-landing-copy.local.json
+
+# Logs, caches, junk.
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+*.log
+.DS_Store
+.phpunit.result.cache
+.phpunit.cache
+
+# Big local artifact (not needed in the image).
+title_id_map.csv
+
+# Docs / dev-only stuff.
+docs
+.superpowers
+.scape
+.worktrees
+.claude
