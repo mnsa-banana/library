@@ -49,8 +49,12 @@ const domainMap: Record<string, BrandKey> = {
 }
 
 export function detectBrand(): BrandConfig {
-  // Dev override via query param — persist in sessionStorage so it survives navigation
-  if (import.meta.env.DEV) {
+  const host = window.location.hostname
+  // Allow ?brand= override in dev OR on any host not mapped to a production
+  // brand domain (Railway previews, staging URLs, etc.) — persist in
+  // sessionStorage so it survives navigation.
+  const allowOverride = import.meta.env.DEV || !(host in domainMap)
+  if (allowOverride) {
     const params = new URLSearchParams(window.location.search)
     const override = params.get('brand') as BrandKey | null
     if (override && brands[override]) {
@@ -63,7 +67,6 @@ export function detectBrand(): BrandConfig {
     }
   }
 
-  const host = window.location.hostname
   const brandKey = domainMap[host] ?? 'sponge-kids'
   return brands[brandKey]
 }

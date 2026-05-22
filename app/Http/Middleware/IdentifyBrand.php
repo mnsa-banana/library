@@ -9,16 +9,23 @@ class IdentifyBrand
 {
     public function handle(Request $request, Closure $next)
     {
-        // X-Brand header → ?brand= query (local/testing only) → Host → default.
+        // X-Brand header → ?brand= query → Host → default. The query override
+        // is honored in non-production envs OR when the request host isn't a
+        // configured brand domain (Railway previews, staging URLs, etc.) — on
+        // real brand hosts in production the query is ignored so users can't
+        // cross-brand via a crafted URL.
+        $host = $request->getHost();
+        $domainBrand = config('brands.domains')[$host] ?? null;
+
         $headerBrand = $request->header('X-Brand');
-        $queryBrand = app()->environment('local', 'testing') ? $request->query('brand') : null;
+        $queryAllowed = ! app()->environment('production') || $domainBrand === null;
+        $queryBrand = $queryAllowed ? $request->query('brand') : null;
         $candidate = $headerBrand ?: $queryBrand;
 
         if (is_string($candidate) && $candidate !== '' && config("brands.brands.{$candidate}")) {
             $brandKey = $candidate;
         } else {
-            $host = $request->getHost();
-            $brandKey = config('brands.domains')[$host] ?? config('brands.default');
+            $brandKey = $domainBrand ?? config('brands.default');
         }
         $brand = config("brands.brands.{$brandKey}", config("brands.brands." . config('brands.default')));
 
