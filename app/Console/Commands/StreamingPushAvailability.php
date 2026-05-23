@@ -31,6 +31,7 @@ class StreamingPushAvailability extends Command
             ->where('sto.region', 'US')
             ->where('sto.type', 'subscription')
             ->whereNotNull('st.imdb_id')
+            ->where('st.imdb_id', '!=', '')
             ->distinct()
             ->pluck('st.imdb_id')
             ->sort()

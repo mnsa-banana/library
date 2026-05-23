@@ -9,7 +9,7 @@ export default defineConfig(({ command }) => ({
     emptyOutDir: true,
   },
   server: {
-    host: '127.0.0.1',
+    host: true,
     port: 8081,
     proxy: {
       '/api': {
