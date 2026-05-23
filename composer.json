@@ -1,6 +1,6 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "mnsa-banana/sponge-kids",
+    "name": "tdikun/sponge-kids",
     "type": "project",
     "description": "Sponge Kids — parent-facing read-only content analysis app (Laravel + Vite/React).",
     "keywords": ["laravel", "sponge-kids"],
