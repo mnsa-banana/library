@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Mail\ResetPasswordMail;
 use App\Models\User;
-use App\Support\BrandResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -14,17 +13,14 @@ use Illuminate\Support\Facades\Password;
 
 class PasswordResetController extends Controller
 {
-    public function __construct(private BrandResolver $brands) {}
-
     public function forgot(Request $request): Response
     {
         $data = $request->validate(['email' => 'required|email']);
 
         $user = User::where('email', $data['email'])->first();
         if ($user) {
-            $brand = $this->brands->fromRequest($request);
             $token = Password::createToken($user);
-            Mail::to($user->email)->send(new ResetPasswordMail($user, $token, $brand));
+            Mail::to($user->email)->send(new ResetPasswordMail($user, $token));
         }
 
         return response()->noContent();

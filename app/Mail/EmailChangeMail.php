@@ -2,7 +2,6 @@
 
 namespace App\Mail;
 
-use App\Support\Brand;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -18,29 +17,27 @@ class EmailChangeMail extends Mailable
         public string $newEmail,
         public string $token,
         public int $changeId,
-        public Brand $brand,
     ) {}
 
     public function envelope(): Envelope
     {
+        $appName = config('app.name');
+
         return new Envelope(
-            from: new Address($this->brand->mailFromAddress, $this->brand->mailFromName),
-            subject: "Confirm your new email for {$this->brand->name}",
+            from: new Address(config('mail.from.address'), config('mail.from.name')),
+            subject: "Confirm your new email for {$appName}",
         );
     }
 
     public function content(): Content
     {
-        $link = $this->brand->spaOrigin()
-            . '/email/confirm?id=' . $this->changeId
-            . '&token=' . $this->token;
+        $link = rtrim((string) config('app.url'), '/')
+            .'/email/confirm?id='.$this->changeId
+            .'&token='.$this->token;
 
         return new Content(
             view: 'emails.email-change',
-            with: [
-                'brand' => $this->brand,
-                'link' => $link,
-            ],
+            with: ['link' => $link],
         );
     }
 }

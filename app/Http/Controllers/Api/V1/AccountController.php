@@ -3,10 +3,16 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Mail\EmailChangedNotice;
+use App\Mail\EmailChangeMail;
+use App\Models\EmailChange;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class AccountController extends Controller
@@ -33,7 +39,7 @@ class AccountController extends Controller
         return response()->noContent();
     }
 
-    public function requestEmailChange(Request $request, \App\Support\BrandResolver $brands): Response
+    public function requestEmailChange(Request $request): Response
     {
         $data = $request->validate([
             'current_password' => 'required|string',
@@ -47,35 +53,34 @@ class AccountController extends Controller
             ]);
         }
 
-        \App\Models\EmailChange::where('user_id', $user->id)->whereNull('used_at')->delete();
+        EmailChange::where('user_id', $user->id)->whereNull('used_at')->delete();
 
         $plain = bin2hex(random_bytes(32));
-        $change = \App\Models\EmailChange::create([
+        $change = EmailChange::create([
             'user_id' => $user->id,
             'new_email' => $data['new_email'],
             'token_hash' => Hash::make($plain),
             'expires_at' => now()->addMinutes(60),
         ]);
 
-        \Illuminate\Support\Facades\Mail::to($data['new_email'])
-            ->send(new \App\Mail\EmailChangeMail(
+        Mail::to($data['new_email'])
+            ->send(new EmailChangeMail(
                 $data['new_email'],
                 $plain,
                 $change->id,
-                $brands->fromRequest($request),
             ));
 
         return response()->noContent();
     }
 
-    public function confirmEmailChange(Request $request, \App\Support\BrandResolver $brands): JsonResponse
+    public function confirmEmailChange(Request $request): JsonResponse
     {
         $data = $request->validate([
             'id' => 'required|integer',
             'token' => 'required|string',
         ]);
 
-        $change = \App\Models\EmailChange::whereKey($data['id'])
+        $change = EmailChange::whereKey($data['id'])
             ->whereNull('used_at')
             ->first();
 
@@ -90,19 +95,19 @@ class AccountController extends Controller
         $oldEmail = $user->email;
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($user, $change) {
+            DB::transaction(function () use ($user, $change) {
                 $user->forceFill(['email' => $change->new_email])->save();
                 $change->forceFill(['used_at' => now()])->save();
             });
-        } catch (\Illuminate\Database\QueryException $e) {
+        } catch (QueryException $e) {
             // users.email unique constraint — someone else grabbed this address first.
             return response()->json([
                 'message' => __('That email is already taken.'),
             ], 409);
         }
 
-        \Illuminate\Support\Facades\Mail::to($oldEmail)
-            ->send(new \App\Mail\EmailChangedNotice($user, $change->new_email, $brands->fromRequest($request)));
+        Mail::to($oldEmail)
+            ->send(new EmailChangedNotice($user, $change->new_email));
 
         return response()->json(['ok' => true]);
     }

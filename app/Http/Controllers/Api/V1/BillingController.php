@@ -12,9 +12,9 @@ class BillingController extends Controller
     public function status(Request $request, RevenueCatService $rc): JsonResponse
     {
         $appUserId = (string) $request->user()->id;
-        $secretKey = $request->attributes->get('revenuecat_secret_key', '');
+        $secretKey = (string) config('services.revenuecat.secret_key', '');
         $subscriber = $rc->getSubscriber($appUserId, $secretKey);
-        $entitlementId = $request->attributes->get('revenuecat_entitlement_id', config('brands.brands.' . config('brands.default') . '.entitlement_id'));
+        $entitlementId = config('services.revenuecat.entitlement_id');
 
         $entitlements = $subscriber['subscriber']['entitlements'] ?? [];
         $entitlement = $entitlements[$entitlementId] ?? null;
@@ -36,19 +36,19 @@ class BillingController extends Controller
 
     public function checkoutUrl(Request $request): JsonResponse
     {
-        $baseUrl = $request->attributes->get('revenuecat_purchase_link_url', config('brands.brands.' . config('brands.default') . '.purchase_link_url'));
+        $baseUrl = (string) config('services.revenuecat.purchase_link_url', '');
         $appUserId = (string) $request->user()->id;
-        $url = rtrim($baseUrl, '/') . '/' . urlencode($appUserId) . '?skip_purchase_success=true';
+        $url = rtrim($baseUrl, '/').'/'.urlencode($appUserId).'?skip_purchase_success=true';
 
         return response()->json(['checkout_url' => $url]);
     }
 
-    public function manageUrl(Request $request, \App\Support\BrandResolver $brands): JsonResponse
+    public function manageUrl(Request $request): JsonResponse
     {
-        $brand = $brands->fromRequest($request);
+        $appUserId = (string) $request->user()->id;
+        $pattern = (string) config('services.revenuecat.customer_center_url_pattern');
+        $url = str_replace('{appUserId}', urlencode($appUserId), $pattern);
 
-        return response()->json([
-            'manage_url' => $brand->customerCenterUrl((string) $request->user()->id),
-        ]);
+        return response()->json(['manage_url' => $url]);
     }
 }

@@ -59,8 +59,8 @@ class AuthController extends Controller
     public function me(Request $request, RevenueCatService $rc): JsonResponse
     {
         $user = $request->user();
-        $entitlementId = $request->attributes->get('revenuecat_entitlement_id', config('brands.brands.' . config('brands.default') . '.entitlement_id'));
-        $secretKey = $request->attributes->get('revenuecat_secret_key', '');
+        $entitlementId = config('services.revenuecat.entitlement_id');
+        $secretKey = (string) config('services.revenuecat.secret_key', '');
         $subscribed = $rc->isSubscribed((string) $user->id, $entitlementId, $secretKey);
 
         return response()->json([

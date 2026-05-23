@@ -14,11 +14,10 @@ class EnsureSubscribed
     {
         $user = $request->user();
         $appUserId = (string) $user->id;
-        $entitlementId = $request->attributes->get('revenuecat_entitlement_id', config('brands.brands.' . config('brands.default') . '.entitlement_id'));
+        $entitlementId = config('services.revenuecat.entitlement_id');
+        $secretKey = (string) config('services.revenuecat.secret_key', '');
 
-        $secretKey = $request->attributes->get('revenuecat_secret_key', '');
-
-        if (!$this->rc->isSubscribed($appUserId, $entitlementId, $secretKey)) {
+        if (! $this->rc->isSubscribed($appUserId, $entitlementId, $secretKey)) {
             return response()->json([
                 'message' => 'Active subscription required.',
                 'code' => 'subscription_required',

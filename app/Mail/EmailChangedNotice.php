@@ -3,7 +3,6 @@
 namespace App\Mail;
 
 use App\Models\User;
-use App\Support\Brand;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -18,14 +17,15 @@ class EmailChangedNotice extends Mailable
     public function __construct(
         public User $user,
         public string $newEmail,
-        public Brand $brand,
     ) {}
 
     public function envelope(): Envelope
     {
+        $appName = config('app.name');
+
         return new Envelope(
-            from: new Address($this->brand->mailFromAddress, $this->brand->mailFromName),
-            subject: "Your {$this->brand->name} email was changed",
+            from: new Address(config('mail.from.address'), config('mail.from.name')),
+            subject: "Your {$appName} email was changed",
         );
     }
 
@@ -35,7 +35,6 @@ class EmailChangedNotice extends Mailable
             view: 'emails.email-changed-notice',
             with: [
                 'user' => $this->user,
-                'brand' => $this->brand,
                 'newEmailMasked' => $this->mask($this->newEmail),
             ],
         );
@@ -48,6 +47,7 @@ class EmailChangedNotice extends Mailable
         // Show at most the first character; always emit at least 3 stars so
         // short locals are never disclosed in full.
         $shown = $len > 1 ? mb_substr($local, 0, 1) : '';
-        return $shown . str_repeat('*', max(3, $len - 1)) . '@' . $domain;
+
+        return $shown.str_repeat('*', max(3, $len - 1)).'@'.$domain;
     }
 }

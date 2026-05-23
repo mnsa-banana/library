@@ -3,7 +3,6 @@
 namespace App\Mail;
 
 use App\Models\User;
-use App\Support\Brand;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -18,28 +17,28 @@ class ResetPasswordMail extends Mailable
     public function __construct(
         public User $user,
         public string $token,
-        public Brand $brand,
     ) {}
 
     public function envelope(): Envelope
     {
+        $appName = config('app.name');
+
         return new Envelope(
-            from: new Address($this->brand->mailFromAddress, $this->brand->mailFromName),
-            subject: "Reset your {$this->brand->name} password",
+            from: new Address(config('mail.from.address'), config('mail.from.name')),
+            subject: "Reset your {$appName} password",
         );
     }
 
     public function content(): Content
     {
-        $link = $this->brand->spaOrigin()
-            . '/reset?token=' . $this->token
-            . '&email=' . urlencode($this->user->email);
+        $link = rtrim((string) config('app.url'), '/')
+            .'/reset?token='.$this->token
+            .'&email='.urlencode($this->user->email);
 
         return new Content(
             view: 'emails.password-reset',
             with: [
                 'user' => $this->user,
-                'brand' => $this->brand,
                 'link' => $link,
             ],
         );
