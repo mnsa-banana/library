@@ -1,9 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "mnsa-banana/sponge-kids",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "Sponge Kids — parent-facing read-only content analysis app (Laravel + Vite/React).",
+    "keywords": ["laravel", "sponge-kids"],
     "license": "MIT",
     "require": {
         "php": "^8.3",
