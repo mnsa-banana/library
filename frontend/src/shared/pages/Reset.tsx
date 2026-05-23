@@ -2,13 +2,11 @@ import { useState, FormEvent } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { apiResetPassword, fetchMe, setApiToken } from '../api'
 import { useAuth } from '../auth-context'
-import { useBrand, isMnsa } from '../brand-context'
 
 export function Reset() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const { login } = useAuth()
-  const brand = useBrand()
   const email = params.get('email') ?? ''
   const token = params.get('token') ?? ''
 
@@ -36,7 +34,7 @@ export function Reset() {
         subscribed = me.subscribed
       } catch {}
       login(data.token, data.user, subscribed)
-      navigate(brand.postAuthRoute, { replace: true })
+      navigate('/home', { replace: true })
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -73,15 +71,6 @@ export function Reset() {
     </>
   )
 
-  if (isMnsa(brand.key)) {
-    return (
-      <div className="page-center mnsa-auth-page">
-        <div className="auth-shell">
-          <div className="auth-card auth-card--bare">{form}</div>
-        </div>
-      </div>
-    )
-  }
   return (
     <div className="page-center">
       <div className="auth-card">

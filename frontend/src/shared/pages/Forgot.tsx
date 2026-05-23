@@ -1,10 +1,8 @@
 import { useState, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { apiForgotPassword } from '../api'
-import { useBrand, isMnsa } from '../brand-context'
 
 export function Forgot() {
-  const brand = useBrand()
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -48,15 +46,6 @@ export function Forgot() {
     </>
   )
 
-  if (isMnsa(brand.key)) {
-    return (
-      <div className="page-center mnsa-auth-page">
-        <div className="auth-shell">
-          <div className="auth-card auth-card--bare">{card}</div>
-        </div>
-      </div>
-    )
-  }
   return (
     <div className="page-center">
       <div className="auth-card">

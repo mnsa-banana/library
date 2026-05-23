@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth-context'
-import { useBrand, isMnsa } from '../brand-context'
 import { fetchBillingStatus, fetchCheckoutUrl, apiLogout, setApiToken } from '../api'
 
 export function Subscribe() {
   const navigate = useNavigate()
   const { token, logout, setSubscribed } = useAuth()
-  const brand = useBrand()
   const [loading, setLoading] = useState(false)
   const [awaitingPurchase, setAwaitingPurchase] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,7 +18,7 @@ export function Subscribe() {
       if (status.subscribed) {
         setAwaitingPurchase(false)
         setSubscribed(true)
-        navigate(brand.postAuthRoute, { replace: true })
+        navigate('/home', { replace: true })
       }
     } catch {
       failCountRef.current += 1
@@ -29,7 +27,7 @@ export function Subscribe() {
         setError('Could not verify subscription. Please try again.')
       }
     }
-  }, [setSubscribed, navigate, brand.postAuthRoute])
+  }, [setSubscribed, navigate])
 
   useEffect(() => {
     if (!awaitingPurchase) return
@@ -84,40 +82,10 @@ export function Subscribe() {
     </>
   )
 
-  if (isMnsa(brand.key)) {
-    const parts = brand.name.split(' ')
-    const titleAccent = parts.slice(-2).join(' ')
-    const titleLead = parts.slice(0, -2).join(' ')
-
-    return (
-      <div className="page-center mnsa-auth-page">
-        <div className="auth-shell">
-          <header className="auth-hero">
-            <p className="auth-eyebrow">Almost there</p>
-            <h1 className="auth-display-title">
-              {titleLead}<span>{titleAccent}</span>
-            </h1>
-            <p className="auth-hero__subtitle">
-              One more step to unlock everything {brand.name} can do.
-            </p>
-          </header>
-
-          <div className="auth-card auth-card--bare">
-            {cardBody}
-          </div>
-
-          <p className="auth-switch auth-switch--external">
-            Already a subscriber? <Link to="/account">Manage account</Link> · <button className="btn-link" onClick={handleLogout}>Sign out</button>
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="page-center">
       <div className="auth-card">
-        <h1 className="auth-title">{brand.name}</h1>
+        <h1 className="auth-title">Sponge Kids</h1>
         <p className="auth-subtitle">Subscribe to get started</p>
 
         {cardBody}

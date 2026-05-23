@@ -1,5 +1,4 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useBrand } from './shared/brand-context'
 import { useAuth } from './shared/auth-context'
 import { NotFound } from './shared/pages/NotFound'
 
@@ -11,11 +10,9 @@ import { Reset } from './shared/pages/Reset'
 import { EmailConfirm } from './shared/pages/EmailConfirm'
 import { Account } from './shared/pages/Account'
 
-import { MnsaSplash } from './brands/mnsa/pages/Splash'
-import { MnsaExtension } from './brands/mnsa/pages/Extension'
-import { SkSplash } from './brands/sponge-kids/pages/Splash'
-import { SkHome } from './brands/sponge-kids/pages/Home'
-import { SkReport } from './brands/sponge-kids/pages/Report'
+import { Splash } from './pages/Splash'
+import { Home } from './pages/Home'
+import { Report } from './pages/Report'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token, isLoading } = useAuth()
@@ -33,21 +30,16 @@ function RequireSubscription({ children }: { children: React.ReactNode }) {
 
 function RedirectIfAuthenticated({ children }: { children: React.ReactNode }) {
   const { token, isLoading } = useAuth()
-  const brand = useBrand()
   if (isLoading) return null
-  if (token) return <Navigate to={brand.postAuthRoute} replace />
+  if (token) return <Navigate to="/home" replace />
   return <>{children}</>
 }
 
 export function AppRouter() {
-  const brand = useBrand()
-
   return (
     <Routes>
-      {/* Public: splash */}
-      <Route path="/" element={brand.hasSearch ? <SkSplash /> : <MnsaSplash />} />
+      <Route path="/" element={<Splash />} />
 
-      {/* Auth routes */}
       <Route path="/login" element={<RedirectIfAuthenticated><Login /></RedirectIfAuthenticated>} />
       <Route path="/register" element={<RedirectIfAuthenticated><Register /></RedirectIfAuthenticated>} />
       <Route path="/forgot" element={<Forgot />} />
@@ -55,29 +47,15 @@ export function AppRouter() {
       <Route path="/email/confirm" element={<EmailConfirm />} />
       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
 
-      {/* Subscription */}
       <Route path="/subscribe" element={<RequireAuth><Subscribe /></RequireAuth>} />
 
-      {/* Sponge Kids only */}
-      {brand.hasSearch && (
-        <Route path="/home" element={
-          <RequireAuth><RequireSubscription><SkHome /></RequireSubscription></RequireAuth>
-        } />
-      )}
-      {brand.hasReports && (
-        <Route path="/reports/:id" element={
-          <RequireAuth><RequireSubscription><SkReport /></RequireSubscription></RequireAuth>
-        } />
-      )}
+      <Route path="/home" element={
+        <RequireAuth><RequireSubscription><Home /></RequireSubscription></RequireAuth>
+      } />
+      <Route path="/reports/:id" element={
+        <RequireAuth><RequireSubscription><Report /></RequireSubscription></RequireAuth>
+      } />
 
-      {/* MNSA only */}
-      {brand.hasExtensionPage && (
-        <Route path="/extension" element={
-          <RequireAuth><RequireSubscription><MnsaExtension /></RequireSubscription></RequireAuth>
-        } />
-      )}
-
-      {/* 404 */}
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

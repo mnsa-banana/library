@@ -3,12 +3,7 @@ const API_BASE = import.meta.env.DEV
   : `${window.location.origin}/api/v1`
 
 let _token: string | null = null
-let _brandKey: string | null = null
 let _onUnauthorized: (() => void) | null = null
-
-export function setApiBrand(key: string) {
-  _brandKey = key
-}
 
 export function setApiToken(token: string | null) {
   _token = token
@@ -28,9 +23,6 @@ async function apiFetch(path: string, init?: RequestInit, opts?: FetchOpts): Pro
   if (_token) {
     headers['Authorization'] = `Bearer ${_token}`
   }
-  if (_brandKey) {
-    headers['X-Brand'] = _brandKey
-  }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
   if (res.status === 401) {
     if (!opts?.silentOn401) _onUnauthorized?.()
@@ -47,7 +39,7 @@ async function apiFetch(path: string, init?: RequestInit, opts?: FetchOpts): Pro
 export async function apiRegister(name: string, email: string, password: string, passwordConfirmation: string) {
   const res = await fetch(`${API_BASE}/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(_brandKey ? { 'X-Brand': _brandKey } : {}) },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ name, email, password, password_confirmation: passwordConfirmation }),
   })
   const data = await res.json()
@@ -61,7 +53,7 @@ export async function apiRegister(name: string, email: string, password: string,
 export async function apiLogin(email: string, password: string) {
   const res = await fetch(`${API_BASE}/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(_brandKey ? { 'X-Brand': _brandKey } : {}) },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ email, password }),
   })
   const data = await res.json()
@@ -161,7 +153,7 @@ export async function fetchReport(id: number): Promise<ReportDetail> {
 export async function apiForgotPassword(email: string): Promise<void> {
   const res = await fetch(`${API_BASE}/password/forgot`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(_brandKey ? { 'X-Brand': _brandKey } : {}) },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ email }),
   })
   if (res.status === 429) {
@@ -180,7 +172,7 @@ export async function apiResetPassword(body: {
 }) {
   const res = await fetch(`${API_BASE}/password/reset`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(_brandKey ? { 'X-Brand': _brandKey } : {}) },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(body),
   })
   const data = await res.json()
@@ -220,7 +212,6 @@ export async function apiConfirmEmailChange(params: { id: number; token: string 
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      ...(_brandKey ? { 'X-Brand': _brandKey } : {}),
     },
     body: JSON.stringify(params),
   })

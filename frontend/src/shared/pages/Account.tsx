@@ -1,7 +1,6 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth-context'
-import { useBrand, isMnsa } from '../brand-context'
 import {
   apiChangePassword,
   apiRequestEmailChange,
@@ -15,7 +14,6 @@ import {
 
 export function Account() {
   const { user, token, logout } = useAuth()
-  const brand = useBrand()
   const navigate = useNavigate()
   const [billing, setBilling] = useState<BillingStatus | null>(null)
   const [billingError, setBillingError] = useState<string | null>(null)
@@ -28,7 +26,7 @@ export function Account() {
 
   if (!user) return null
 
-  const backLabel = brand.hasSearch ? '← Back to home' : '← Back to extension'
+  const backLabel = '← Back to home'
 
   const sections = (
     <>
@@ -72,32 +70,13 @@ export function Account() {
     </>
   )
 
-  if (isMnsa(brand.key)) {
-    return (
-      <div className="mnsa-auth-page" style={{ minHeight: '100vh', padding: '2rem 1rem' }}>
-        <div className="auth-shell" style={{ maxWidth: 640, margin: '0 auto' }}>
-          <p style={{ marginBottom: '1rem' }}>
-            <Link to={brand.postAuthRoute} className="btn-link">{backLabel}</Link>
-          </p>
-          <header className="auth-hero">
-            <p className="auth-eyebrow">Settings</p>
-            <h1 className="auth-display-title"><span>Your account</span></h1>
-          </header>
-          <div className="auth-card auth-card--bare">
-            {sections}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div style={{ background: 'var(--color-bg)', minHeight: '100vh', color: 'var(--color-text)' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem' }}>
         <h1 style={{ fontSize: '1.25rem', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
           Sponge<span style={{ color: 'var(--color-accent-secondary)' }}>.kids</span>
         </h1>
-        <Link to={brand.postAuthRoute} className="btn-link">{backLabel}</Link>
+        <Link to="/home" className="btn-link">{backLabel}</Link>
       </header>
       <div className="account-page" style={{ maxWidth: 640, margin: '0 auto', padding: '1rem 1.5rem 3rem' }}>
         <h1>Your account</h1>

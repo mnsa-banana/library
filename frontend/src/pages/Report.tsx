@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { fetchReport, ReportDetail, Rating } from '../../../shared/api'
+import { fetchReport, ReportDetail, Rating } from '../shared/api'
 
 function formatKey(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -16,7 +16,7 @@ function severityColor(level: string): string {
   return '#38a169'
 }
 
-export function SkReport() {
+export function Report() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [report, setReport] = useState<ReportDetail | null>(null)

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
-import { useAuth } from '../../../shared/auth-context'
+import { useAuth } from '../shared/auth-context'
 
-export function SkSplash() {
+export function Splash() {
   const { token } = useAuth()
 
   return (

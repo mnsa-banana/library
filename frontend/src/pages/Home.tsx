@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { fetchReports, apiLogout, setApiToken, ReportSummary } from '../../../shared/api'
-import { useAuth } from '../../../shared/auth-context'
+import { fetchReports, apiLogout, setApiToken, ReportSummary } from '../shared/api'
+import { useAuth } from '../shared/auth-context'
 
 const MIN_SEARCH_LENGTH = 3
 
-export function SkHome() {
+export function Home() {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
   const [reports, setReports] = useState<ReportSummary[]>([])

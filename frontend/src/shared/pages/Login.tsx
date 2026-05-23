@@ -1,13 +1,11 @@
 import { useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth-context'
-import { useBrand, isMnsa } from '../brand-context'
 import { apiLogin, setApiToken } from '../api'
 
 export function Login() {
   const navigate = useNavigate()
   const { login } = useAuth()
-  const brand = useBrand()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -21,7 +19,7 @@ export function Login() {
       const data = await apiLogin(email, password)
       setApiToken(data.token)
       login(data.token, data.user)
-      navigate(brand.postAuthRoute, { replace: true })
+      navigate('/home', { replace: true })
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -66,41 +64,10 @@ export function Login() {
     </>
   )
 
-  if (isMnsa(brand.key)) {
-    // Split "Make Netflix {Safe|Straight} Again" → lead + 2-word accent.
-    const parts = brand.name.split(' ')
-    const titleAccent = parts.slice(-2).join(' ')
-    const titleLead = parts.slice(0, -2).join(' ')
-
-    return (
-      <div className="page-center mnsa-auth-page">
-        <div className="auth-shell">
-          <header className="auth-hero">
-            <p className="auth-eyebrow">Welcome back</p>
-            <h1 className="auth-display-title">
-              {titleLead}<span>{titleAccent}</span>
-            </h1>
-            <p className="auth-hero__subtitle">
-              Sign in to pick up where you left off.
-            </p>
-          </header>
-
-          <div className="auth-card auth-card--bare">
-            {formMarkup}
-          </div>
-
-          <p className="auth-switch auth-switch--external">
-            Don't have an account? <Link to="/register">Sign up</Link>
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="page-center">
       <div className="auth-card">
-        <h1 className="auth-title">{brand.name}</h1>
+        <h1 className="auth-title">Sponge Kids</h1>
         <p className="auth-subtitle">Welcome back</p>
 
         {formMarkup}
