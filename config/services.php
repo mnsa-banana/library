@@ -53,4 +53,10 @@ return [
         'customer_center_url_pattern' => env('REVENUECAT_CUSTOMER_CENTER_URL', 'https://pay.rev.cat/customer/{appUserId}'),
     ],
 
+    'mnsa' => [
+        'base_url' => env('MNSA_BASE_URL'),
+        'service_token' => env('MNSA_SERVICE_TOKEN'),
+        'http_timeout' => (int) env('MNSA_HTTP_TIMEOUT', 30),
+    ],
+
 ];

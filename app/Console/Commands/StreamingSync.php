@@ -45,6 +45,7 @@ class StreamingSync extends Command
     ];
 
     protected $signature = 'streaming:sync {--hours=72 : Lookback window in hours}';
+
     protected $description = 'Apply incremental catalog changes from /changes feed';
 
     public function handle(): int
@@ -81,7 +82,9 @@ class StreamingSync extends Command
                             'from' => $from,
                             'to' => $to,
                         ];
-                        if ($cursor) $params['cursor'] = $cursor;
+                        if ($cursor) {
+                            $params['cursor'] = $cursor;
+                        }
 
                         $resp = $client->get('/changes', $params);
                         $changes = $resp['changes'] ?? [];
@@ -97,7 +100,7 @@ class StreamingSync extends Command
                             }
                         }
                         $cursor = $resp['nextCursor'] ?? null;
-                        $hasMore = !empty($resp['hasMore']) && $cursor;
+                        $hasMore = ! empty($resp['hasMore']) && $cursor;
                         $log->update(['last_cursor' => $cursor]);
                         unset($resp, $changes, $shows);
                     } while ($hasMore);
@@ -116,7 +119,9 @@ class StreamingSync extends Command
                         'change_type' => 'upcoming',
                         'item_type' => 'show',
                     ];
-                    if ($cursor) $params['cursor'] = $cursor;
+                    if ($cursor) {
+                        $params['cursor'] = $cursor;
+                    }
 
                     $resp = $client->get('/changes', $params);
                     $changes = $resp['changes'] ?? [];
@@ -132,7 +137,7 @@ class StreamingSync extends Command
                         }
                     }
                     $cursor = $resp['nextCursor'] ?? null;
-                    $hasMore = !empty($resp['hasMore']) && $cursor;
+                    $hasMore = ! empty($resp['hasMore']) && $cursor;
                     $log->update(['last_cursor' => $cursor]);
                     unset($resp, $changes, $shows);
                 } while ($hasMore);
@@ -149,10 +154,19 @@ class StreamingSync extends Command
             $this->info(sprintf('Done. new=%d updated=%d removed=%d expiring=%d upcoming=%d failed=%d. Calls=%d',
                 $stats['new'], $stats['updated'], $stats['removed'], $stats['expiring'], $stats['upcoming'], $stats['failed'],
                 $log->fresh()->api_calls_used));
+            $this->info('Pushing Netflix availability to MNSA…');
+            $pushExit = $this->call('streaming:push-availability');
+            if ($pushExit !== self::SUCCESS) {
+                // Do not fail streaming:sync — the streaming data on Sponge is already saved.
+                // The push is idempotent and will be retried on the next sync run.
+                $this->warn('streaming:push-availability returned exit code '.$pushExit.' — sync data is saved; will retry next run.');
+            }
+
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $log->update(['status' => 'failed', 'completed_at' => now(), 'error_message' => $e->getMessage()]);
             $this->error("Sync failed: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }
@@ -160,7 +174,9 @@ class StreamingSync extends Command
     private function applyChange(array $change, string $type, array $shows, string $catalog): void
     {
         $showId = $change['showId'] ?? null;
-        if (!$showId) return;
+        if (! $showId) {
+            return;
+        }
 
         if ($type === 'removed') {
             $serviceId = explode('.', $catalog, 2)[0];
@@ -170,6 +186,7 @@ class StreamingSync extends Command
                 ->where('region', 'US')
                 ->where('type', $catalogType)
                 ->delete();
+
             return;
         }
 
@@ -182,12 +199,15 @@ class StreamingSync extends Command
                 ->where('region', 'US')
                 ->where('type', $catalogType)
                 ->update(['expires_on' => $expiresAt]);
+
             return;
         }
 
         // 'new' or 'updated' — upsert title + replace US offers from response.shows[showId].
         $show = $shows[$showId] ?? null;
-        if (!$show) return;
+        if (! $show) {
+            return;
+        }
 
         $this->upsertTitle($show);
         $this->replaceUsOffers($show);
@@ -213,7 +233,9 @@ class StreamingSync extends Command
         $serviceId = $change['service']['id'] ?? null;
         $type = $change['streamingOptionType'] ?? null;
         $ts = $change['timestamp'] ?? null;
-        if (!$showId || !$serviceId || !$type || !$ts) return;
+        if (! $showId || ! $serviceId || ! $type || ! $ts) {
+            return;
+        }
 
         if ($show = $shows[$showId] ?? null) {
             $this->upsertTitle($show);
@@ -236,8 +258,11 @@ class StreamingSync extends Command
 
     private function parseTmdbId(?string $tmdbId): array
     {
-        if (!$tmdbId || !str_contains($tmdbId, '/')) return [null, null];
+        if (! $tmdbId || ! str_contains($tmdbId, '/')) {
+            return [null, null];
+        }
         [$type, $id] = explode('/', $tmdbId, 2);
+
         return [$type, ctype_digit($id) ? (int) $id : null];
     }
 
@@ -283,16 +308,21 @@ class StreamingSync extends Command
         $buckets = [];
         foreach ($usOptions as $opt) {
             $svc = $opt['service']['id'] ?? null;
-            if (!$svc) continue;
-            $key = $svc . '|' . ($opt['type'] ?? '') . '|' . ($opt['quality'] ?? '');
+            if (! $svc) {
+                continue;
+            }
+            $key = $svc.'|'.($opt['type'] ?? '').'|'.($opt['quality'] ?? '');
             $buckets[$key] = ($buckets[$key] ?? 0) + 1;
         }
         $collapsed = [];
         foreach ($buckets as $key => $n) {
-            if ($n <= 1) continue;
+            if ($n <= 1) {
+                continue;
+            }
             $svc = explode('|', $key, 2)[0];
             $collapsed[$svc] = max($collapsed[$svc] ?? 0, $n);
         }
+
         return $collapsed;
     }
 }
