@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1\Account;
 
+use App\Mail\EmailChangedNotice;
 use App\Mail\EmailChangeMail;
 use App\Models\EmailChange;
 use App\Models\User;
@@ -20,14 +21,13 @@ class ChangeEmailTest extends TestCase
         $user = User::factory()->create(['password' => Hash::make('pw')]);
 
         $resp = $this->actingAs($user, 'sanctum')
-            ->withHeader('X-Brand', 'mnsa-safe')
             ->postJson('/api/v1/account/email', [
                 'current_password' => 'pw',
                 'new_email' => 'new@example.com',
             ]);
 
         $resp->assertNoContent();
-        Mail::assertSent(EmailChangeMail::class, fn ($m) => $m->hasTo('new@example.com') && $m->brand->key === 'mnsa-safe');
+        Mail::assertSent(EmailChangeMail::class, fn ($m) => $m->hasTo('new@example.com'));
         $this->assertDatabaseHas('email_changes', ['user_id' => $user->id, 'new_email' => 'new@example.com']);
     }
 
@@ -87,9 +87,10 @@ class ChangeEmailTest extends TestCase
 
         $token = null;
         $changeId = null;
-        Mail::assertSent(\App\Mail\EmailChangeMail::class, function ($m) use (&$token, &$changeId) {
+        Mail::assertSent(EmailChangeMail::class, function ($m) use (&$token, &$changeId) {
             $token = $m->token;
             $changeId = $m->changeId;
+
             return true;
         });
 
@@ -100,7 +101,7 @@ class ChangeEmailTest extends TestCase
 
         $resp->assertOk()->assertJson(['ok' => true]);
         $this->assertSame('new@example.com', $user->fresh()->email);
-        Mail::assertSent(\App\Mail\EmailChangedNotice::class, fn ($m) => $m->hasTo('old@example.com'));
+        Mail::assertSent(EmailChangedNotice::class, fn ($m) => $m->hasTo('old@example.com'));
     }
 
     public function test_confirm_rejects_invalid_token(): void
@@ -112,7 +113,7 @@ class ChangeEmailTest extends TestCase
             'new_email' => 'new@example.com',
         ])->assertNoContent();
 
-        $changeId = \App\Models\EmailChange::query()->latest('id')->first()->id;
+        $changeId = EmailChange::query()->latest('id')->first()->id;
 
         $this->postJson('/api/v1/account/email/confirm', [
             'id' => $changeId,
@@ -132,13 +133,14 @@ class ChangeEmailTest extends TestCase
 
         $token = null;
         $changeId = null;
-        Mail::assertSent(\App\Mail\EmailChangeMail::class, function ($m) use (&$token, &$changeId) {
+        Mail::assertSent(EmailChangeMail::class, function ($m) use (&$token, &$changeId) {
             $token = $m->token;
             $changeId = $m->changeId;
+
             return true;
         });
 
-        \App\Models\EmailChange::query()->update(['expires_at' => now()->subMinute()]);
+        EmailChange::query()->update(['expires_at' => now()->subMinute()]);
 
         $this->postJson('/api/v1/account/email/confirm', [
             'id' => $changeId,
@@ -160,13 +162,14 @@ class ChangeEmailTest extends TestCase
             'current_password' => 'pw', 'new_email' => 'shared@example.com',
         ])->assertNoContent();
 
-        $changes = \App\Models\EmailChange::all();
+        $changes = EmailChange::all();
         $this->assertCount(2, $changes);
 
         // Capture both tokens by looking at the dispatched mails.
         $tokens = [];
-        Mail::assertSent(\App\Mail\EmailChangeMail::class, function ($m) use (&$tokens) {
+        Mail::assertSent(EmailChangeMail::class, function ($m) use (&$tokens) {
             $tokens[$m->changeId] = $m->token;
+
             return true;
         });
 

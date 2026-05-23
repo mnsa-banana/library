@@ -46,11 +46,6 @@ return [
         'api_key' => env('TMDB_API_KEY'),
     ],
 
-    'mail_brand' => [
-        'accent_hex' => env('MAIL_ACCENT_HEX', '#4f46e5'),
-        'logo_url' => env('MAIL_LOGO_URL'),
-    ],
-
     'revenuecat' => [
         'entitlement_id' => env('REVENUECAT_ENTITLEMENT_ID', 'Sponge Kids Pro'),
         'secret_key' => env('REVENUECAT_SECRET_KEY'),

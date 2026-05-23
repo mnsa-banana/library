@@ -17,13 +17,11 @@ class ForgotPasswordTest extends TestCase
         Mail::fake();
         $user = User::factory()->create(['email' => 'parent@example.com']);
 
-        $resp = $this->withHeader('X-Brand', 'mnsa-safe')
-            ->postJson('/api/v1/password/forgot', ['email' => 'parent@example.com']);
+        $resp = $this->postJson('/api/v1/password/forgot', ['email' => 'parent@example.com']);
 
         $resp->assertNoContent();
         Mail::assertSent(ResetPasswordMail::class, function (ResetPasswordMail $mail) use ($user) {
             return $mail->hasTo($user->email)
-                && $mail->brand->key === 'mnsa-safe'
                 && ! empty($mail->token);
         });
     }

@@ -12,11 +12,9 @@ class BillingManageUrlTest extends TestCase
 
     public function test_returns_customer_center_url_with_user_id_substituted(): void
     {
-        config()->set('brands.brands.mnsa-safe.customer_center_url_pattern', 'https://pay.rev.cat/customer/{appUserId}');
         $user = User::factory()->create();
 
         $resp = $this->actingAs($user, 'sanctum')
-            ->withHeader('X-Brand', 'mnsa-safe')
             ->getJson('/api/v1/billing/manage-url');
 
         $resp->assertOk()->assertJson([

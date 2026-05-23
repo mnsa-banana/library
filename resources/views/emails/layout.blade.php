@@ -8,13 +8,9 @@
 <body style="margin:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;padding:24px 0;">
 <tr><td align="center">
-<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;overflow:hidden;border-top:6px solid {{ config('services.mail_brand.accent_hex', '#4f46e5') }};">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;overflow:hidden;border-top:6px solid #6c63ff;">
 <tr><td style="padding:32px 32px 8px 32px;">
-@if(config('services.mail_brand.logo_url'))
-<img src="{{ config('services.mail_brand.logo_url') }}" alt="{{ config('app.name') }}" height="32" style="display:block;margin-bottom:16px;">
-@else
-<div style="font-weight:700;font-size:18px;color:{{ config('services.mail_brand.accent_hex', '#4f46e5') }};margin-bottom:16px;">{{ config('app.name') }}</div>
-@endif
+<div style="font-weight:700;font-size:18px;color:#6c63ff;margin-bottom:16px;">{{ config('app.name') }}</div>
 </td></tr>
 <tr><td style="padding:0 32px 32px 32px;font-size:16px;line-height:1.55;">
 @yield('body')
