@@ -17,6 +17,26 @@ class NetflixKidsClientTest extends TestCase
         config()->set('services.netflix_kids.search_delay', 0);
     }
 
+    public function test_maturity_levels_batches_and_maps_ids(): void
+    {
+        $this->configure();
+        Http::fake(['*pathEvaluator*' => Http::response([
+            'value' => ['videos' => [
+                '111' => ['maturity' => ['rating' => ['maturityLevel' => 70]]],
+                '222' => ['maturity' => ['rating' => ['maturityLevel' => 110]]],
+            ]],
+        ], 200)]);
+
+        $levels = (new NetflixKidsClient())->maturityLevels(
+            [111, 222],
+            'https://www.netflix.com/api/shakti/mre',
+            'auth-token'
+        );
+
+        $this->assertSame(70, $levels[111]);
+        $this->assertSame(110, $levels[222]);
+    }
+
     public function test_probe_session_scrapes_country_kids_auth_and_build(): void
     {
         $this->configure();

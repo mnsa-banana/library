@@ -26,6 +26,34 @@ class NetflixKidsClient
         return str_replace(['\\x2F', '\\x2B', '\\x3D'], ['/', '+', '='], $s);
     }
 
+    /** @param int[] $netflixIds @return array<int,int|null> id => maturityLevel */
+    public function maturityLevels(array $netflixIds, string $shaktiUrl, string $authUrl): array
+    {
+        $out = [];
+        foreach (array_chunk($netflixIds, 48) as $chunk) {
+            $form = ['authURL' => $authUrl];
+            $paths = [];
+            foreach ($chunk as $id) {
+                $paths[] = json_encode(['videos', (int) $id, ['maturity']]);
+            }
+            $resp = Http::asForm()
+                ->withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
+                ->withBody(
+                    http_build_query($form) . '&' . implode('&', array_map(
+                        fn ($p) => 'path=' . urlencode($p), $paths
+                    )),
+                    'application/x-www-form-urlencoded'
+                )
+                ->post(rtrim($shaktiUrl, '/') . '/pathEvaluator?method=call');
+
+            $videos = $resp->json('value.videos', []);
+            foreach ($chunk as $id) {
+                $out[$id] = $videos[(string) $id]['maturity']['rating']['maturityLevel'] ?? null;
+            }
+        }
+        return $out;
+    }
+
     /** Fetch /Kids and scrape session facts. */
     public function probeSession(): array
     {
