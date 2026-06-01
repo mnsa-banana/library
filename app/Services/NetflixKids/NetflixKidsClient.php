@@ -14,6 +14,8 @@ class NetflixKidsClient
     private const GRAPHQL_URL = 'https://web.prod.cloud.netflix.com/graphql';
 
     private string $cookie;
+    private int $retryTimes;
+    private int $retrySleepMs;
     private ?array $searchTemplate = null;
 
     public function __construct()
@@ -22,6 +24,8 @@ class NetflixKidsClient
         if ($this->cookie === '') {
             throw new RuntimeException('NETFLIX_KIDS_COOKIE is not configured');
         }
+        $this->retryTimes = max(1, (int) config('services.netflix_kids.retry_times', 4));
+        $this->retrySleepMs = (int) config('services.netflix_kids.retry_sleep_ms', 1000);
     }
 
     private function unescape(string $s): string
@@ -36,26 +40,35 @@ class NetflixKidsClient
      * those too. Throws after exhausting attempts so callers fail loud rather
      * than silently treating an error body as "no match".
      */
-    private function sendWithRetry(callable $send): Response
+    private function sendWithRetry(callable $send, bool $expectJson = true): Response
     {
-        $times = max(1, (int) config('services.netflix_kids.retry_times', 4));
-        $sleepMs = (int) config('services.netflix_kids.retry_sleep_ms', 1000);
         $last = 'unknown error';
-        for ($attempt = 1; $attempt <= $times; $attempt++) {
+        for ($attempt = 1; $attempt <= $this->retryTimes; $attempt++) {
             try {
                 $resp = $send();
                 if ($resp->successful()) {
-                    return $resp;
+                    // For the JSON APIs, guard against a 2xx that isn't our JSON (e.g. a WAF/HTML
+                    // interstitial) which would otherwise be silently read as "no data"/"no match".
+                    // The /Kids page is HTML, so callers expecting HTML pass $expectJson = false.
+                    if (! $expectJson) {
+                        return $resp;
+                    }
+                    $head = ltrim($resp->body());
+                    if ($head !== '' && ($head[0] === '{' || $head[0] === '[')) {
+                        return $resp;
+                    }
+                    $last = 'non-JSON 2xx body';
+                } else {
+                    $last = 'HTTP ' . $resp->status();
                 }
-                $last = 'HTTP ' . $resp->status();
             } catch (ConnectionException $e) {
                 $last = $e->getMessage();
             }
-            if ($attempt < $times && $sleepMs > 0) {
-                usleep($sleepMs * 1000);
+            if ($attempt < $this->retryTimes && $this->retrySleepMs > 0) {
+                usleep($this->retrySleepMs * 1000);
             }
         }
-        throw new RuntimeException("Netflix request failed after {$times} attempts: {$last}");
+        throw new RuntimeException("Netflix request failed after {$this->retryTimes} attempts: {$last}");
     }
 
     /** @param int[] $netflixIds @return array<int,int|null> id => maturityLevel */
@@ -131,7 +144,7 @@ class NetflixKidsClient
     {
         $body = $this->sendWithRetry(fn () => Http::withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
             ->timeout(30)
-            ->get('https://www.netflix.com/Kids'))
+            ->get('https://www.netflix.com/Kids'), expectJson: false)
             ->body();
 
         $grab = function (string $re) use ($body): ?string {

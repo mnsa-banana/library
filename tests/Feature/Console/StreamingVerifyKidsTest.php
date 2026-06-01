@@ -198,9 +198,10 @@ class StreamingVerifyKidsTest extends TestCase
 
         $this->artisan('streaming:verify-kids')->assertSuccessful();
 
-        // unknown maturity -> left unverified (null), NOT written false, and never searched
+        // unknown maturity -> surfaced stays null (heuristic-eligible) and is NEVER searched,
+        // but checked_at IS stamped so the title converges (skipped until the stale window).
         $this->assertNull(DB::table('streaming_titles')->where('id', 't-unk')->value('netflix_kids_surfaced'));
-        $this->assertNull(DB::table('streaming_titles')->where('id', 't-unk')->value('netflix_kids_checked_at'));
+        $this->assertNotNull(DB::table('streaming_titles')->where('id', 't-unk')->value('netflix_kids_checked_at'));
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'graphql')
             && str_contains($r->body(), '"searchTerm":"Unknown Maturity"'));
     }
