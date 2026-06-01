@@ -52,6 +52,9 @@ return [
         'maturity_ceiling' => (int) env('NETFLIX_KIDS_MATURITY_CEILING', 70),
         // Throttle between Stage-2 search calls (seconds, float ok).
         'search_delay' => (float) env('NETFLIX_KIDS_SEARCH_DELAY', 0.3),
+        // Retry transient HTTP/TLS errors on Netflix calls before giving up.
+        'retry_times' => (int) env('NETFLIX_KIDS_RETRY_TIMES', 4),
+        'retry_sleep_ms' => (int) env('NETFLIX_KIDS_RETRY_SLEEP_MS', 1000),
         // Default refresh horizon: a no-flag run re-verifies titles older than this
         // (and skips more-recently-checked ones, so an aborted run resumes).
         'default_stale_days' => (int) env('NETFLIX_KIDS_DEFAULT_STALE_DAYS', 14),

@@ -39,6 +39,8 @@ class NetflixKidsClient
             }
             $resp = Http::asForm()
                 ->withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
+                ->timeout(30)
+                ->retry((int) config('services.netflix_kids.retry_times', 4), (int) config('services.netflix_kids.retry_sleep_ms', 1000))
                 ->withBody(
                     http_build_query($form) . '&' . implode('&', array_map(
                         fn ($p) => 'path=' . urlencode($p), $paths
@@ -84,7 +86,9 @@ class NetflixKidsClient
             'x-netflix.context.locales' => 'en-us',
             'Origin' => 'https://www.netflix.com',
             'Referer' => 'https://www.netflix.com/Kids/search',
-        ])->withBody(json_encode($body), 'application/json')
+        ])->timeout(30)
+          ->retry((int) config('services.netflix_kids.retry_times', 4), (int) config('services.netflix_kids.retry_sleep_ms', 1000))
+          ->withBody(json_encode($body), 'application/json')
           ->post(self::GRAPHQL_URL);
 
         return (bool) preg_match('/"videoId":' . $netflixId . '\b/', $resp->body());

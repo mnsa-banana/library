@@ -18,6 +18,7 @@ class StreamingVerifyKidsTest extends TestCase
         config()->set('services.netflix_kids.persisted_query_version', 102);
         config()->set('services.netflix_kids.maturity_ceiling', 70);
         config()->set('services.netflix_kids.search_delay', 0);
+        config()->set('services.netflix_kids.retry_sleep_ms', 0);
     }
 
     private function seedTitle(string $id, string $title, string $nfid, ?int $availFromDays = null): void
@@ -153,5 +154,39 @@ class StreamingVerifyKidsTest extends TestCase
         $this->artisan('streaming:verify-kids')->assertSuccessful();
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'graphql')
             && str_contains($r->body(), '"searchTerm":"Already Done"'));
+    }
+
+    public function test_skips_title_whose_search_persistently_fails(): void
+    {
+        $this->cfg();
+        $this->seedTitle('t-ok', 'Good Toon', '555');
+        $this->seedTitle('t-bad', 'Broken Toon', '666');
+        Http::fake([
+            'www.netflix.com/Kids' => Http::response($this->goodKidsHtml(), 200),
+            '*pathEvaluator*' => Http::response(['value' => ['videos' => [
+                '81186615' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
+                '81315367' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
+                '70153373' => ['maturity' => ['rating' => ['maturityLevel' => 70]]],
+                '555' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
+                '666' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
+            ]]], 200),
+            'web.prod.cloud.netflix.com/graphql' => function ($request) {
+                $term = json_decode($request->body(), true)['variables']['searchTerm'] ?? '';
+                if ($term === 'Broken Toon') {
+                    throw new \Illuminate\Http\Client\ConnectionException('TLS eof');
+                }
+                $ids = ['the thundermans' => [81186615], 'bigfoot family' => [81315367],
+                        'seinfeld' => [], 'Good Toon' => [555]];
+                $nodes = array_map(fn ($i) => '{"node":{"videoId":' . $i . '}}', $ids[$term] ?? []);
+                return Http::response('{"data":{"search":{"edges":[' . implode(',', $nodes) . ']}}}', 200);
+            },
+        ]);
+
+        $this->artisan('streaming:verify-kids')->assertSuccessful();
+
+        // sibling processed, surfaced
+        $this->assertTrue((bool) DB::table('streaming_titles')->where('id', 't-ok')->value('netflix_kids_surfaced'));
+        // failing title left unchecked for a later run
+        $this->assertNull(DB::table('streaming_titles')->where('id', 't-bad')->value('netflix_kids_checked_at'));
     }
 }

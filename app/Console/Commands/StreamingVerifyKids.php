@@ -77,12 +77,23 @@ class StreamingVerifyKids extends Command
 
         $delay = (float) config('services.netflix_kids.search_delay');
         $surfacedCount = 0;
+        $skipped = 0;
+        $bar = $this->output->createProgressBar(count($byNf));
+        $bar->start();
         foreach ($byNf as $titleId => $info) {
             $level = $levels[$info['nfid']] ?? null;
             if ($level === null || $level > $ceiling) {
                 $surfaced = false;                       // above ceiling / unknown -> not in kids
             } else {
-                $surfaced = $client->searchHasId($info['title'], $info['nfid'], $app); // Stage 2
+                try {
+                    $surfaced = $client->searchHasId($info['title'], $info['nfid'], $app); // Stage 2
+                } catch (\Throwable $e) {
+                    $this->newLine();
+                    $this->warn("  skip {$info['nfid']} ({$info['title']}): {$e->getMessage()}");
+                    $skipped++;
+                    $bar->advance();
+                    continue; // leave unchecked so a later run retries it
+                }
                 if ($delay > 0) { usleep((int) ($delay * 1_000_000)); }
             }
             DB::table('streaming_titles')->where('id', $titleId)->update([
@@ -90,9 +101,12 @@ class StreamingVerifyKids extends Command
                 'netflix_kids_checked_at' => now(),
             ]);
             if ($surfaced) { $surfacedCount++; }
+            $bar->advance();
         }
+        $bar->finish();
+        $this->newLine();
 
-        $this->info("Done. surfaced=$surfacedCount of " . count($byNf) . '.');
+        $this->info("Done. surfaced=$surfacedCount, skipped=$skipped of " . count($byNf) . '.');
         return self::SUCCESS;
     }
 
