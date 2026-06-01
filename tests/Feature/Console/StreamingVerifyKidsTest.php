@@ -100,6 +100,8 @@ class StreamingVerifyKidsTest extends TestCase
         $this->assertFalse((bool) DB::table('streaming_titles')->where('id', 't-sei')->value('netflix_kids_surfaced'));
         $this->assertFalse((bool) DB::table('streaming_titles')->where('id', 't-bb')->value('netflix_kids_surfaced'));
         $this->assertNotNull(DB::table('streaming_titles')->where('id', 't-lbt')->value('netflix_kids_checked_at'));
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'graphql')
+            && str_contains($r->body(), '"searchTerm":"Breaking Bad"'));
     }
 
     public function test_aborts_without_writes_on_non_us_session(): void
@@ -123,6 +125,20 @@ class StreamingVerifyKidsTest extends TestCase
         $this->artisan('streaming:verify-kids')->assertSuccessful();
 
         $this->assertNull(DB::table('streaming_titles')->where('id', 't-up')->value('netflix_kids_checked_at'));
+    }
+
+    public function test_resets_previously_verified_title_when_no_playable_offer(): void
+    {
+        $this->cfg();
+        $this->seedTitle('t-orphan', 'Gone Kids Show', '424242', availFromDays: 30); // only offer is upcoming
+        DB::table('streaming_titles')->where('id', 't-orphan')
+            ->update(['netflix_kids_surfaced' => true, 'netflix_kids_checked_at' => now()->subDays(1)]);
+        $this->fakeNetflix($this->goodKidsHtml(), $this->anchorMaturity(), $this->anchorSearch());
+
+        $this->artisan('streaming:verify-kids')->assertSuccessful();
+
+        $this->assertNull(DB::table('streaming_titles')->where('id', 't-orphan')->value('netflix_kids_surfaced'));
+        $this->assertNull(DB::table('streaming_titles')->where('id', 't-orphan')->value('netflix_kids_checked_at'));
     }
 
     public function test_resumes_skipping_recently_checked(): void
