@@ -53,7 +53,7 @@ class NetflixKidsClient
                     if (! $expectJson) {
                         return $resp;
                     }
-                    $head = ltrim($resp->body());
+                    $head = ltrim($resp->body(), " \t\n\r\0\x0B\xEF\xBB\xBF"); // also strip a leading UTF-8 BOM
                     if ($head !== '' && ($head[0] === '{' || $head[0] === '[')) {
                         return $resp;
                     }
