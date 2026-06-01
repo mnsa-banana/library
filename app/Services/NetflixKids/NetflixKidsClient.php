@@ -28,7 +28,7 @@ class NetflixKidsClient
     }
 
     /** @param int[] $netflixIds @return array<int,int|null> id => maturityLevel */
-    public function maturityLevels(array $netflixIds, string $shaktiUrl, string $authUrl): array
+    public function maturityLevels(array $netflixIds, string $shaktiUrl, string $authUrl, ?callable $onBatch = null): array
     {
         $out = [];
         foreach (array_chunk($netflixIds, 48) as $chunk) {
@@ -52,6 +52,9 @@ class NetflixKidsClient
             $videos = $resp->json('value.videos', []);
             foreach ($chunk as $id) {
                 $out[$id] = $videos[(string) $id]['maturity']['rating']['maturityLevel'] ?? null;
+            }
+            if ($onBatch) {
+                $onBatch(count($out), count($netflixIds));
             }
         }
         return $out;

@@ -18,6 +18,7 @@ class StreamingVerifyKids extends Command
     public function handle(NetflixKidsClient $client): int
     {
         // ── Stage 0: validate the session BEFORE any writes ──────────────
+        $this->info('Validating US Kids session…');
         $session = $client->probeSession();
         if (($session['country'] ?? null) !== 'US' || ! ($session['is_kids'] ?? false)
             || empty($session['auth_url']) || empty($session['shakti_url']) || empty($session['app_version'])) {
@@ -34,6 +35,8 @@ class StreamingVerifyKids extends Command
                 return $this->abort("control '$term' ($id) unexpectedly surfaced — search not catalog-restricted");
             }
         }
+
+        $this->info("✓ US Kids session OK (region={$session['country']}, anchors verified).");
 
         // ── Cleanup: titles with no qualifying offer revert to null ──────
         $this->resetOrphans();
@@ -68,29 +71,46 @@ class StreamingVerifyKids extends Command
                 $byNf[$r->id] = ['title' => $r->title, 'nfid' => (int) $m[1]];
             }
         }
-        $this->info('Candidates: ' . count($byNf));
+        $this->info('Candidates: ' . count($byNf) . ' currently-playable US Netflix titles to verify.');
 
-        // ── Stage 1: maturity prune ──────────────────────────────────────
-        $nfids = array_map(fn ($x) => $x['nfid'], $byNf);
-        $levels = $client->maturityLevels(array_values($nfids), $session['shakti_url'], $session['auth_url']);
+        // ── Stage 1: maturity prune (with batch progress) ────────────────
         $ceiling = (int) config('services.netflix_kids.maturity_ceiling');
+        $nfids = array_map(fn ($x) => $x['nfid'], $byNf);
+        $this->info(sprintf('Stage 1: fetching Netflix maturity for %d titles…', count($nfids)));
+        $levels = [];
+        if (count($nfids) > 0) {
+            $matBar = $this->output->createProgressBar(count($nfids));
+            $matBar->start();
+            $levels = $client->maturityLevels(
+                array_values($nfids), $session['shakti_url'], $session['auth_url'],
+                fn (int $done, int $total) => $matBar->setProgress(min($done, $total))
+            );
+            $matBar->finish();
+            $this->newLine();
+        }
 
+        // ── Stage 2: per-title Kids search (skip above-ceiling) ──────────
+        $this->info(sprintf('Stage 2: searching Kids catalog (ceiling=maturityLevel %d)…', $ceiling));
         $delay = (float) config('services.netflix_kids.search_delay');
         $surfacedCount = 0;
         $skipped = 0;
+        $pruned = 0;
         $bar = $this->output->createProgressBar(count($byNf));
+        $bar->setFormat(' %current%/%max% [%bar%] %message%');
+        $bar->setMessage('starting…');
         $bar->start();
         foreach ($byNf as $titleId => $info) {
             $level = $levels[$info['nfid']] ?? null;
             if ($level === null || $level > $ceiling) {
                 $surfaced = false;                       // above ceiling / unknown -> not in kids
+                $pruned++;
             } else {
                 try {
                     $surfaced = $client->searchHasId($info['title'], $info['nfid'], $app); // Stage 2
                 } catch (\Throwable $e) {
+                    $skipped++;
                     $this->newLine();
                     $this->warn("  skip {$info['nfid']} ({$info['title']}): {$e->getMessage()}");
-                    $skipped++;
                     $bar->advance();
                     continue; // leave unchecked so a later run retries it
                 }
@@ -101,12 +121,16 @@ class StreamingVerifyKids extends Command
                 'netflix_kids_checked_at' => now(),
             ]);
             if ($surfaced) { $surfacedCount++; }
+            $bar->setMessage(sprintf('surfaced=%d skipped=%d :: %s', $surfacedCount, $skipped, $info['title']));
             $bar->advance();
         }
         $bar->finish();
         $this->newLine();
 
-        $this->info("Done. surfaced=$surfacedCount, skipped=$skipped of " . count($byNf) . '.');
+        $this->info(sprintf(
+            'Done. candidates=%d surfaced=%d skipped=%d (pruned %d above maturity ceiling).',
+            count($byNf), $surfacedCount, $skipped, $pruned
+        ));
         return self::SUCCESS;
     }
 
