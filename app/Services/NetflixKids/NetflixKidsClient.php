@@ -2,6 +2,8 @@
 
 namespace App\Services\NetflixKids;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -27,6 +29,35 @@ class NetflixKidsClient
         return str_replace(['\\x2F', '\\x2B', '\\x3D'], ['/', '+', '='], $s);
     }
 
+    /**
+     * Send an HTTP request with status-aware retry. Laravel's ->retry() only
+     * re-attempts on connection exceptions; Netflix throttling returns 429/5xx
+     * as a normal response, so we must check ->successful() ourselves and retry
+     * those too. Throws after exhausting attempts so callers fail loud rather
+     * than silently treating an error body as "no match".
+     */
+    private function sendWithRetry(callable $send): Response
+    {
+        $times = max(1, (int) config('services.netflix_kids.retry_times', 4));
+        $sleepMs = (int) config('services.netflix_kids.retry_sleep_ms', 1000);
+        $last = 'unknown error';
+        for ($attempt = 1; $attempt <= $times; $attempt++) {
+            try {
+                $resp = $send();
+                if ($resp->successful()) {
+                    return $resp;
+                }
+                $last = 'HTTP ' . $resp->status();
+            } catch (ConnectionException $e) {
+                $last = $e->getMessage();
+            }
+            if ($attempt < $times && $sleepMs > 0) {
+                usleep($sleepMs * 1000);
+            }
+        }
+        throw new RuntimeException("Netflix request failed after {$times} attempts: {$last}");
+    }
+
     /** @param int[] $netflixIds @return array<int,int|null> id => maturityLevel */
     public function maturityLevels(array $netflixIds, string $shaktiUrl, string $authUrl, ?callable $onBatch = null): array
     {
@@ -37,17 +68,16 @@ class NetflixKidsClient
             foreach ($chunk as $id) {
                 $paths[] = json_encode(['videos', (int) $id, ['maturity']]);
             }
-            $resp = Http::asForm()
+            $resp = $this->sendWithRetry(fn () => Http::asForm()
                 ->withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
                 ->timeout(30)
-                ->retry((int) config('services.netflix_kids.retry_times', 4), (int) config('services.netflix_kids.retry_sleep_ms', 1000))
                 ->withBody(
                     http_build_query($form) . '&' . implode('&', array_map(
                         fn ($p) => 'path=' . urlencode($p), $paths
                     )),
                     'application/x-www-form-urlencoded'
                 )
-                ->post(rtrim($shaktiUrl, '/') . '/pathEvaluator?method=call');
+                ->post(rtrim($shaktiUrl, '/') . '/pathEvaluator?method=call'));
 
             $videos = $resp->json('value.videos', []);
             foreach ($chunk as $id) {
@@ -79,7 +109,7 @@ class NetflixKidsClient
         $body['variables']['searchTerm'] = $title;
         $body['variables']['endCursor'] = null;
 
-        $resp = Http::withHeaders([
+        $resp = $this->sendWithRetry(fn () => Http::withHeaders([
             'User-Agent' => self::UA,
             'Cookie' => $this->cookie,
             'Content-Type' => 'application/json',
@@ -90,9 +120,8 @@ class NetflixKidsClient
             'Origin' => 'https://www.netflix.com',
             'Referer' => 'https://www.netflix.com/Kids/search',
         ])->timeout(30)
-          ->retry((int) config('services.netflix_kids.retry_times', 4), (int) config('services.netflix_kids.retry_sleep_ms', 1000))
           ->withBody(json_encode($body), 'application/json')
-          ->post(self::GRAPHQL_URL);
+          ->post(self::GRAPHQL_URL));
 
         return (bool) preg_match('/"videoId":' . $netflixId . '\b/', $resp->body());
     }
@@ -100,8 +129,9 @@ class NetflixKidsClient
     /** Fetch /Kids and scrape session facts. */
     public function probeSession(): array
     {
-        $body = Http::withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
-            ->get('https://www.netflix.com/Kids')
+        $body = $this->sendWithRetry(fn () => Http::withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
+            ->timeout(30)
+            ->get('https://www.netflix.com/Kids'))
             ->body();
 
         $grab = function (string $re) use ($body): ?string {

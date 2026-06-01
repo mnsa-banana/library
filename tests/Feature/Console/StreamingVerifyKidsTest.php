@@ -189,4 +189,52 @@ class StreamingVerifyKidsTest extends TestCase
         // failing title left unchecked for a later run
         $this->assertNull(DB::table('streaming_titles')->where('id', 't-bad')->value('netflix_kids_checked_at'));
     }
+
+    public function test_leaves_null_when_maturity_unknown(): void
+    {
+        $this->cfg();
+        $this->seedTitle('t-unk', 'Unknown Maturity', '999'); // 999 not present in maturity fake
+        $this->fakeNetflix($this->goodKidsHtml(), $this->anchorMaturity(), $this->anchorSearch());
+
+        $this->artisan('streaming:verify-kids')->assertSuccessful();
+
+        // unknown maturity -> left unverified (null), NOT written false, and never searched
+        $this->assertNull(DB::table('streaming_titles')->where('id', 't-unk')->value('netflix_kids_surfaced'));
+        $this->assertNull(DB::table('streaming_titles')->where('id', 't-unk')->value('netflix_kids_checked_at'));
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'graphql')
+            && str_contains($r->body(), '"searchTerm":"Unknown Maturity"'));
+    }
+
+    public function test_aborts_when_maturity_endpoint_returns_no_anchor_data(): void
+    {
+        $this->cfg();
+        $this->seedTitle('t-x', 'Some Kid Show', '555');
+        // search anchors pass, but the maturity endpoint returns nothing for the anchors
+        $this->fakeNetflix($this->goodKidsHtml(), [], $this->anchorSearch());
+
+        $this->artisan('streaming:verify-kids')->assertFailed();
+
+        $this->assertNull(DB::table('streaming_titles')->where('id', 't-x')->value('netflix_kids_checked_at'));
+    }
+
+    public function test_excludes_expired_offer(): void
+    {
+        $this->cfg();
+        DB::table('streaming_services')->updateOrInsert(['id' => 'netflix'], ['name' => 'Netflix']);
+        DB::table('streaming_titles')->insert([
+            'id' => 't-exp', 'show_type' => 'movie', 'title' => 'Expired Toon',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('streaming_title_offers')->insert([
+            'title_id' => 't-exp', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription',
+            'link' => 'https://www.netflix.com/title/333/',
+            'available_from' => null, 'expires_on' => now()->subDay(), 'updated_at' => now(),
+        ]);
+        $this->fakeNetflix($this->goodKidsHtml(), $this->anchorMaturity(), $this->anchorSearch());
+
+        $this->artisan('streaming:verify-kids')->assertSuccessful();
+
+        // offer already expired -> not a candidate -> never verified
+        $this->assertNull(DB::table('streaming_titles')->where('id', 't-exp')->value('netflix_kids_checked_at'));
+    }
 }

@@ -66,4 +66,28 @@ class NetflixKidsClientTest extends TestCase
         $this->assertTrue($c->searchHasId('land before time', 683101, 'v6c030968'));
         $this->assertFalse($c->searchHasId('seinfeld', 70153373, 'v6c030968'));
     }
+
+    public function test_search_throws_on_persistent_http_error_instead_of_silent_false(): void
+    {
+        $this->configure();
+        config()->set('services.netflix_kids.retry_times', 2);
+        config()->set('services.netflix_kids.retry_sleep_ms', 0);
+        Http::fake(['web.prod.cloud.netflix.com/graphql' => Http::response('rate limited', 429)]);
+
+        // A persistent 429 must surface as an exception (so the command skips the
+        // title), NOT a silent false that would mark it "not in Kids".
+        $this->expectException(\RuntimeException::class);
+        (new NetflixKidsClient())->searchHasId('whatever', 123, 'v6c030968');
+    }
+
+    public function test_maturity_throws_on_persistent_http_error(): void
+    {
+        $this->configure();
+        config()->set('services.netflix_kids.retry_times', 2);
+        config()->set('services.netflix_kids.retry_sleep_ms', 0);
+        Http::fake(['*pathEvaluator*' => Http::response('upstream error', 503)]);
+
+        $this->expectException(\RuntimeException::class);
+        (new NetflixKidsClient())->maturityLevels([111], 'https://www.netflix.com/api/shakti/mre', 'auth');
+    }
 }

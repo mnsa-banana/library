@@ -15,28 +15,47 @@ class StreamingVerifyKids extends Command
     private const ANCHORS_IN = [81186615 => 'the thundermans', 81315367 => 'bigfoot family'];
     private const ANCHOR_OUT = [70153373 => 'seinfeld'];
 
+    /** Flush bulk writes every N processed titles (keeps resume ~granular, avoids 1 UPDATE/title). */
+    private const WRITE_BATCH = 500;
+
     public function handle(NetflixKidsClient $client): int
     {
-        // ── Stage 0: validate the session BEFORE any writes ──────────────
-        $this->info('Validating US Kids session…');
-        $session = $client->probeSession();
-        if (($session['country'] ?? null) !== 'US' || ! ($session['is_kids'] ?? false)
-            || empty($session['auth_url']) || empty($session['shakti_url']) || empty($session['app_version'])) {
-            return $this->abort('not a US Kids session (country=' . ($session['country'] ?? 'null') . ', is_kids=' . var_export($session['is_kids'] ?? null, true) . ')');
-        }
-        $app = $session['app_version'];
-        foreach (self::ANCHORS_IN as $id => $term) {
-            if (! $client->searchHasId($term, $id, $app)) {
-                return $this->abort("anchor '$term' ($id) not surfaced — cookie/persisted-query likely stale");
-            }
-        }
-        foreach (self::ANCHOR_OUT as $id => $term) {
-            if ($client->searchHasId($term, $id, $app)) {
-                return $this->abort("control '$term' ($id) unexpectedly surfaced — search not catalog-restricted");
-            }
-        }
+        $ceiling = (int) config('services.netflix_kids.maturity_ceiling');
 
-        $this->info("✓ US Kids session OK (region={$session['country']}, anchors verified).");
+        // ── Stage 0: validate session + BOTH endpoints BEFORE any write ──
+        // Any failure here (bad region / expired cookie / rotated query or
+        // shakti URL / transient error surviving retries) aborts with no writes.
+        $this->info('Validating US Kids session…');
+        try {
+            $session = $client->probeSession();
+            if (($session['country'] ?? null) !== 'US' || ! ($session['is_kids'] ?? false)
+                || empty($session['auth_url']) || empty($session['shakti_url']) || empty($session['app_version'])) {
+                return $this->abort('not a US Kids session (country=' . ($session['country'] ?? 'null') . ', is_kids=' . var_export($session['is_kids'] ?? null, true) . ')');
+            }
+            $app = $session['app_version'];
+
+            // search path: in-anchors must surface, out-control must not
+            foreach (self::ANCHORS_IN as $id => $term) {
+                if (! $client->searchHasId($term, $id, $app)) {
+                    return $this->abort("anchor '$term' ($id) not surfaced — cookie/persisted-query likely stale");
+                }
+            }
+            foreach (self::ANCHOR_OUT as $id => $term) {
+                if ($client->searchHasId($term, $id, $app)) {
+                    return $this->abort("control '$term' ($id) unexpectedly surfaced — search not catalog-restricted");
+                }
+            }
+
+            // maturity path: anchors must return a usable (<= ceiling) level, else
+            // shakti/auth has rotated and Stage 1 would wrongly prune everything.
+            $anchorLevels = $client->maturityLevels(array_keys(self::ANCHORS_IN), $session['shakti_url'], $session['auth_url']);
+            if (count(array_filter($anchorLevels, fn ($l) => $l !== null && $l <= $ceiling)) === 0) {
+                return $this->abort('maturity endpoint returned no usable data for anchors — shakti/auth likely rotated');
+            }
+        } catch (\Throwable $e) {
+            return $this->abort('session validation failed: ' . $e->getMessage());
+        }
+        $this->info("✓ US Kids session OK (region={$session['country']}, search + maturity anchors verified).");
 
         // ── Cleanup: titles with no qualifying offer revert to null ──────
         $this->resetOrphans();
@@ -56,53 +75,85 @@ class StreamingVerifyKids extends Command
 
         $rows = DB::table('streaming_titles as st')
             ->join('streaming_title_offers as o', 'o.title_id', '=', 'st.id')
-            ->where('o.service_id', 'netflix')->where('o.region', 'US')
-            ->where('o.link', 'like', '%/title/%')  // PHP preg_match below extracts the id; LIKE keeps this portable to sqlite tests
-            ->where(fn ($q) => $q->whereNull('o.available_from')->orWhere('o.available_from', '<=', now()))
+            ->where(fn ($q) => $this->scopePlayableNetflix($q, 'o'))
             ->when($floor !== null, fn ($q) => $q->where(fn ($w) => $w
                 ->whereNull('st.netflix_kids_checked_at')->orWhere('st.netflix_kids_checked_at', '<', $floor)))
             ->select('st.id', 'st.title', 'o.link')
             ->distinct()->get();
 
-        // map id => nfid
+        // map id => nfid; a link that matched LIKE but has no numeric id is surfaced as a warning, not silently dropped
         $byNf = [];
+        $badLinks = 0;
         foreach ($rows as $r) {
             if (preg_match('#/title/(\d+)#', $r->link, $m)) {
                 $byNf[$r->id] = ['title' => $r->title, 'nfid' => (int) $m[1]];
+            } else {
+                $badLinks++;
             }
+        }
+        if ($badLinks > 0) {
+            $this->warn("  {$badLinks} Netflix offer link(s) had no numeric /title/<id> — left unverified.");
         }
         $this->info('Candidates: ' . count($byNf) . ' currently-playable US Netflix titles to verify.');
 
-        // ── Stage 1: maturity prune (with batch progress) ────────────────
-        $ceiling = (int) config('services.netflix_kids.maturity_ceiling');
-        $nfids = array_map(fn ($x) => $x['nfid'], $byNf);
-        $this->info(sprintf('Stage 1: fetching Netflix maturity for %d titles…', count($nfids)));
+        // ── Stage 1: maturity (abort on failure — before any write) ──────
+        $nfids = array_values(array_map(fn ($x) => $x['nfid'], $byNf));
         $levels = [];
         if (count($nfids) > 0) {
+            $this->info(sprintf('Stage 1: fetching Netflix maturity for %d titles…', count($nfids)));
             $matBar = $this->output->createProgressBar(count($nfids));
             $matBar->start();
-            $levels = $client->maturityLevels(
-                array_values($nfids), $session['shakti_url'], $session['auth_url'],
-                fn (int $done, int $total) => $matBar->setProgress(min($done, $total))
-            );
+            try {
+                $levels = $client->maturityLevels(
+                    $nfids, $session['shakti_url'], $session['auth_url'],
+                    fn (int $done, int $total) => $matBar->setProgress(min($done, $total))
+                );
+            } catch (\Throwable $e) {
+                $matBar->finish();
+                $this->newLine();
+                return $this->abort('maturity fetch failed mid-run: ' . $e->getMessage());
+            }
             $matBar->finish();
             $this->newLine();
         }
 
-        // ── Stage 2: per-title Kids search (skip above-ceiling) ──────────
+        // ── Stage 2: per-title Kids search; null maturity = unknown (skip, leave null) ──
         $this->info(sprintf('Stage 2: searching Kids catalog (ceiling=maturityLevel %d)…', $ceiling));
         $delay = (float) config('services.netflix_kids.search_delay');
         $surfacedCount = 0;
         $skipped = 0;
         $pruned = 0;
+        $unknown = 0;
+        $pendingTrue = [];
+        $pendingFalse = [];
+        $flush = function () use (&$pendingTrue, &$pendingFalse): void {
+            $now = now();
+            if ($pendingTrue) {
+                DB::table('streaming_titles')->whereIn('id', $pendingTrue)
+                    ->update(['netflix_kids_surfaced' => true, 'netflix_kids_checked_at' => $now]);
+                $pendingTrue = [];
+            }
+            if ($pendingFalse) {
+                DB::table('streaming_titles')->whereIn('id', $pendingFalse)
+                    ->update(['netflix_kids_surfaced' => false, 'netflix_kids_checked_at' => $now]);
+                $pendingFalse = [];
+            }
+        };
         $bar = $this->output->createProgressBar(count($byNf));
         $bar->setFormat(' %current%/%max% [%bar%] %message%');
         $bar->setMessage('starting…');
         $bar->start();
         foreach ($byNf as $titleId => $info) {
             $level = $levels[$info['nfid']] ?? null;
-            if ($level === null || $level > $ceiling) {
-                $surfaced = false;                       // above ceiling / unknown -> not in kids
+            if ($level === null) {
+                // unknown maturity (not in catalog response / partial failure):
+                // leave unchecked so the heuristic still applies and a later run retries.
+                $unknown++;
+                $bar->advance();
+                continue;
+            }
+            if ($level > $ceiling) {
+                $pendingFalse[] = $titleId;
                 $pruned++;
             } else {
                 try {
@@ -114,22 +165,27 @@ class StreamingVerifyKids extends Command
                     $bar->advance();
                     continue; // leave unchecked so a later run retries it
                 }
+                if ($surfaced) {
+                    $pendingTrue[] = $titleId;
+                    $surfacedCount++;
+                } else {
+                    $pendingFalse[] = $titleId;
+                }
                 if ($delay > 0) { usleep((int) ($delay * 1_000_000)); }
             }
-            DB::table('streaming_titles')->where('id', $titleId)->update([
-                'netflix_kids_surfaced' => $surfaced,
-                'netflix_kids_checked_at' => now(),
-            ]);
-            if ($surfaced) { $surfacedCount++; }
+            if (count($pendingTrue) + count($pendingFalse) >= self::WRITE_BATCH) {
+                $flush();
+            }
             $bar->setMessage(sprintf('surfaced=%d skipped=%d :: %s', $surfacedCount, $skipped, $info['title']));
             $bar->advance();
         }
+        $flush();
         $bar->finish();
         $this->newLine();
 
         $this->info(sprintf(
-            'Done. candidates=%d surfaced=%d skipped=%d (pruned %d above maturity ceiling).',
-            count($byNf), $surfacedCount, $skipped, $pruned
+            'Done. candidates=%d surfaced=%d pruned=%d unknown=%d failed=%d.',
+            count($byNf), $surfacedCount, $pruned, $unknown, $skipped
         ));
         return self::SUCCESS;
     }
@@ -141,14 +197,26 @@ class StreamingVerifyKids extends Command
         return self::FAILURE;
     }
 
+    /**
+     * Single source of truth for "a currently-playable US Netflix offer".
+     * Applied (with the given table alias) to both the work-set join and the
+     * resetOrphans EXISTS subquery so the two can never drift.
+     */
+    private function scopePlayableNetflix($q, string $a)
+    {
+        return $q->where("$a.service_id", 'netflix')
+            ->where("$a.region", 'US')
+            ->where("$a.link", 'like', '%/title/%')  // LIKE (not pg `~`) keeps this portable to sqlite tests; PHP preg_match extracts the id
+            ->where(fn ($w) => $w->whereNull("$a.available_from")->orWhere("$a.available_from", '<=', now()))
+            ->where(fn ($w) => $w->whereNull("$a.expires_on")->orWhere("$a.expires_on", '>', now()));
+    }
+
     /** Titles whose only/any qualifying playable US-Netflix offer is gone revert to null. */
     private function resetOrphans(): void
     {
         $hasOffer = DB::table('streaming_title_offers as o')
-            ->whereColumn('o.title_id', 'streaming_titles.id')
-            ->where('o.service_id', 'netflix')->where('o.region', 'US')
-            ->where('o.link', 'like', '%/title/%')  // PHP preg_match below extracts the id; LIKE keeps this portable to sqlite tests
-            ->where(fn ($q) => $q->whereNull('o.available_from')->orWhere('o.available_from', '<=', now()));
+            ->whereColumn('o.title_id', 'streaming_titles.id');
+        $this->scopePlayableNetflix($hasOffer, 'o');
 
         DB::table('streaming_titles')
             ->whereNotNull('netflix_kids_checked_at')
