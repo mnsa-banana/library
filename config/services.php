@@ -42,6 +42,21 @@ return [
         'qps' => (int) env('STREAMING_AVAILABILITY_QPS', 5),
     ],
 
+    'netflix_kids' => [
+        // Cookie header copied from a US-region, Kids-profile netflix.com session.
+        'cookie' => env('NETFLIX_KIDS_COOKIE'),
+        // SearchPageQueryResults persisted query — capture from browser devtools if rotated.
+        'persisted_query_id' => env('NETFLIX_KIDS_PERSISTED_QUERY_ID'),
+        'persisted_query_version' => (int) env('NETFLIX_KIDS_PERSISTED_QUERY_VERSION', 102),
+        // Netflix's own maturityLevel ceiling for the "titles just for kids" experience (TV-PG).
+        'maturity_ceiling' => (int) env('NETFLIX_KIDS_MATURITY_CEILING', 70),
+        // Throttle between Stage-2 search calls (seconds, float ok).
+        'search_delay' => (float) env('NETFLIX_KIDS_SEARCH_DELAY', 0.3),
+        // Default refresh horizon: a no-flag run re-verifies titles older than this
+        // (and skips more-recently-checked ones, so an aborted run resumes).
+        'default_stale_days' => (int) env('NETFLIX_KIDS_DEFAULT_STALE_DAYS', 14),
+    ],
+
     'tmdb' => [
         'api_key' => env('TMDB_API_KEY'),
     ],
