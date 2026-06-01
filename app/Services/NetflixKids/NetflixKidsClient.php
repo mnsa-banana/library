@@ -12,6 +12,7 @@ class NetflixKidsClient
     private const GRAPHQL_URL = 'https://web.prod.cloud.netflix.com/graphql';
 
     private string $cookie;
+    private ?array $searchTemplate = null;
 
     public function __construct()
     {
@@ -52,6 +53,41 @@ class NetflixKidsClient
             }
         }
         return $out;
+    }
+
+    private function searchTemplate(): array
+    {
+        if ($this->searchTemplate === null) {
+            $path = resource_path('netflix/search_query_template.json');
+            $this->searchTemplate = json_decode((string) file_get_contents($path), true);
+            $this->searchTemplate['extensions'] = ['persistedQuery' => [
+                'id' => (string) config('services.netflix_kids.persisted_query_id'),
+                'version' => (int) config('services.netflix_kids.persisted_query_version'),
+            ]];
+        }
+        return $this->searchTemplate;
+    }
+
+    public function searchHasId(string $title, int $netflixId, string $appVersion): bool
+    {
+        $body = $this->searchTemplate();
+        $body['variables']['searchTerm'] = $title;
+        $body['variables']['endCursor'] = null;
+
+        $resp = Http::withHeaders([
+            'User-Agent' => self::UA,
+            'Cookie' => $this->cookie,
+            'Content-Type' => 'application/json',
+            'x-netflix.context.operation-name' => 'SearchPageQueryResults',
+            'x-netflix.context.app-version' => $appVersion,
+            'x-netflix.context.ui-flavor' => 'akira',
+            'x-netflix.context.locales' => 'en-us',
+            'Origin' => 'https://www.netflix.com',
+            'Referer' => 'https://www.netflix.com/Kids/search',
+        ])->withBody(json_encode($body), 'application/json')
+          ->post(self::GRAPHQL_URL);
+
+        return (bool) preg_match('/"videoId":' . $netflixId . '\b/', $resp->body());
     }
 
     /** Fetch /Kids and scrape session facts. */

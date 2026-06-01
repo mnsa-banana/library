@@ -55,4 +55,15 @@ class NetflixKidsClientTest extends TestCase
         $this->assertSame('https://www.netflix.com/api/shakti/mre', $s['shakti_url']);
         $this->assertSame('v6c030968', $s['app_version']);
     }
+
+    public function test_search_has_id_true_when_id_in_results(): void
+    {
+        $this->configure();
+        Http::fake(['web.prod.cloud.netflix.com/graphql' => Http::response(
+            '{"data":{"search":{"edges":[{"node":{"videoId":683101}},{"node":{"videoId":999}}]}}}', 200
+        )]);
+        $c = new NetflixKidsClient();
+        $this->assertTrue($c->searchHasId('land before time', 683101, 'v6c030968'));
+        $this->assertFalse($c->searchHasId('seinfeld', 70153373, 'v6c030968'));
+    }
 }
