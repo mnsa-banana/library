@@ -30,7 +30,7 @@ class RestrictionController extends Controller
         }
 
         $titles = DB::table('reports as r')
-            ->whereNotNull('r.published_at')
+            ->where('r.published', true)
             ->join('ratings as rat', function ($join) use ($subcategories) {
                 $join->on('rat.report_id', '=', 'r.id')
                     ->where('rat.section_key', '=', 'themes_and_depictions')
@@ -98,10 +98,10 @@ class RestrictionController extends Controller
         })->all();
 
         // Counts for context
-        $totalReports = DB::table('reports')->whereNotNull('published_at')->count();
+        $totalReports = DB::table('reports')->where('published', true)->count();
         $totalWithLgbtq = DB::table('ratings')
             ->join('reports', 'reports.id', '=', 'ratings.report_id')
-            ->whereNotNull('reports.published_at')
+            ->where('reports.published', true)
             ->where('ratings.section_key', 'themes_and_depictions')
             ->where('ratings.group_key', 'relationships_and_family')
             ->whereIn('ratings.subcategory_key', $subcategories)

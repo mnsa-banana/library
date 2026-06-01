@@ -15,7 +15,7 @@ class ReportController extends Controller
         $perPage = min((int) $request->input('per_page', 20), 50);
 
         $query = Report::query()
-            ->whereNotNull('published_at')
+            ->where('published', true)
             ->orderByDesc('published_at');
 
         if ($request->has('content_type')) {
@@ -45,7 +45,7 @@ class ReportController extends Controller
     public function show(int $id): JsonResponse
     {
         $report = Report::with(['categoryGroups', 'ratings'])
-            ->whereNotNull('published_at')
+            ->where('published', true)
             ->findOrFail($id);
 
         return response()->json([
