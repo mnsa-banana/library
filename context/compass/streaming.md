@@ -1,7 +1,8 @@
 # Streaming Availability Integration
-> Last validated: 2026-06-02
+> Last validated: 2026-06-03
 
 ## Quick Commands
+- Full daily pipeline: `php artisan streaming:update` (sync → enrich → verify-kids → push-availability, fail-fast)
 - Check status: `php artisan streaming:status`
 - Refresh service catalog: `php artisan streaming:refresh-services`
 - Initial backfill: `php artisan streaming:backfill`
@@ -12,6 +13,9 @@
 ## Key Files
 - `app/Console/Commands/StreamingRefreshServices.php`, `StreamingBackfill.php`, `StreamingSync.php`, `StreamingEnrich.php`, `StreamingStatus.php`, `StreamingSmoke.php` — 6 artisan commands
 - `app/Console/Commands/StreamingPushAvailability.php` — POSTs the full Netflix-US imdb_id set + Kids subset to MNSA (`streaming:push-availability`)
+- `app/Console/Commands/StreamingVerifyKids.php` — verifies which US Netflix titles surface in the Kids profile, sets `netflix_kids_surfaced` (`streaming:verify-kids`)
+- `app/Console/Commands/StreamingUpdate.php` — orchestrator chaining the four pipeline steps fail-fast (`streaming:update`); the only command scheduled daily
+- `routes/console.php` — schedule: `streaming:update` daily 03:00, `streaming:refresh-services` monthly
 - `app/Services/StreamingAvailability/Client.php` — HTTP wrapper, retries 429/5xx, configurable QPS throttle
 - `app/Services/StreamingAvailability/CatalogService.php` — read-side grouping/dedup for `/streaming` endpoint
 - `app/Services/StreamingAvailability/TmdbEnricher.php` — TMDB pass for us_certification + trailer fallback
@@ -41,6 +45,8 @@
 **Spam titles get soft-deleted on TMDB 404.** `streaming:enrich` soft-deletes a title when TMDB returns 404 with `tmdb_id > 0`. `streaming:backfill` and `streaming:sync` use `withTrashed()->updateOrCreate()` so soft-deleted spam isn't re-inserted.
 
 **Sync window is 72 hours, not 24.** `streaming:sync` covers a 72-hour overlap so a missed daily run self-heals on the next run.
+
+**`streaming:update` is the only scheduled daily job; it runs the four steps fail-fast.** Order is sync → enrich → verify-kids → push-availability; the first non-zero exit stops the chain and `streaming:update` returns that code (remaining steps skipped). Only `--hours` is forwarded (to `sync`, default 72). Consequence: when the Netflix Kids cookie is stale, the daily run fails at `verify-kids` and **push-availability does not run** — on_netflix_us/on_netflix_kids in MNSA stay at their last-pushed values until the cookie is refreshed and the job re-runs. The individual sub-commands are still runnable standalone for targeted re-runs (e.g. `streaming:verify-kids --force`).
 
 **Rate limits hit fast.** Free tier (500 req/mo) returns 429 after about 50 sequential requests. Mega tier rate limit isn't documented, so the Client throttles to 5 QPS by default (`STREAMING_AVAILABILITY_QPS` env var) and retries 429/5xx with exponential backoff (1s → 2s → 4s, max 3 attempts).
 
