@@ -12,7 +12,7 @@ class StreamingPushAvailability extends Command
 {
     protected $signature = 'streaming:push-availability';
 
-    protected $description = 'Push the full Netflix-US imdb_id set to MNSA so it can reconcile its reports.on_netflix_us flags.';
+    protected $description = 'Push the full Netflix-US imdb_id set and Kids subset to MNSA so it can reconcile its on_netflix_us / on_netflix_kids flags.';
 
     public function handle(): int
     {
