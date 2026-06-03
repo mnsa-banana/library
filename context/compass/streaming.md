@@ -1,5 +1,5 @@
 # Streaming Availability Integration
-> Last validated: 2026-05-21
+> Last validated: 2026-06-02
 
 ## Quick Commands
 - Check status: `php artisan streaming:status`
@@ -11,6 +11,7 @@
 
 ## Key Files
 - `app/Console/Commands/StreamingRefreshServices.php`, `StreamingBackfill.php`, `StreamingSync.php`, `StreamingEnrich.php`, `StreamingStatus.php`, `StreamingSmoke.php` — 6 artisan commands
+- `app/Console/Commands/StreamingPushAvailability.php` — POSTs the full Netflix-US imdb_id set + Kids subset to MNSA (`streaming:push-availability`)
 - `app/Services/StreamingAvailability/Client.php` — HTTP wrapper, retries 429/5xx, configurable QPS throttle
 - `app/Services/StreamingAvailability/CatalogService.php` — read-side grouping/dedup for `/streaming` endpoint
 - `app/Services/StreamingAvailability/TmdbEnricher.php` — TMDB pass for us_certification + trailer fallback
@@ -46,6 +47,8 @@
 **Backfill is resume-safe.** `streaming_sync_log.last_cursor` is updated after every page so a 429 storm or process kill doesn't waste the run. Re-running `streaming:backfill` continues from where it left off.
 
 **Both backfill and sync bump PHP memory to 512M.** `/shows/search/filters` and `/changes` responses include full show payloads (cast, directors, streamingOptions, imageSet variants). PHP's allocator high-water mark accumulates across hundreds of paginated requests and the 128M default OOMs partway through large catalogs (Prime, Tubi). Both commands also call `DB::connection()->disableQueryLog()` so query history doesn't pile up either.
+
+**`streaming:push-availability` derives Kids as a strict subset of the full set.** Both the full Netflix-US imdb_id list and the `kids_imdb_ids` subset are built from a shared `netflixUsQuery()` helper — the Kids query simply adds `.where('st.netflix_kids_surfaced', true)`. This guarantees the Kids list can never contain IDs absent from the full list. `netflix_kids_surfaced` is populated by the separate `streaming:verify-kids` command.
 
 **Reports link by imdb_id/tmdb_id only.** No FK between `reports` and `streaming_titles`. CatalogService matches by IMDB first, then TMDB+tmdb_type. A report with no matching streaming_title returns empty groups.
 
