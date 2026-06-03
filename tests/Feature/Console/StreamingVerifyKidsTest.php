@@ -3,6 +3,7 @@
 namespace Tests\Feature\Console;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -44,8 +45,9 @@ class StreamingVerifyKidsTest extends TestCase
             'web.prod.cloud.netflix.com/graphql' => function ($request) use ($searchByTerm) {
                 $term = json_decode($request->body(), true)['variables']['searchTerm'] ?? '';
                 $ids = $searchByTerm[$term] ?? [];
-                $nodes = array_map(fn ($i) => '{"node":{"videoId":' . $i . '}}', $ids);
-                return Http::response('{"data":{"search":{"edges":[' . implode(',', $nodes) . ']}}}', 200);
+                $nodes = array_map(fn ($i) => '{"node":{"videoId":'.$i.'}}', $ids);
+
+                return Http::response('{"data":{"search":{"edges":['.implode(',', $nodes).']}}}', 200);
             },
         ]);
     }
@@ -53,15 +55,15 @@ class StreamingVerifyKidsTest extends TestCase
     private function goodKidsHtml(): string
     {
         return '<body data-uia="container-kids">"currentCountry":"US",'
-            . '"authURL":"auth","apiUrl":"https:\x2F\x2Fwww.netflix.com\x2Fapi\x2Fshakti\x2Fmre",'
-            . '"BUILD_IDENTIFIER":"v6c030968"</body>';
+            .'"authURL":"auth","apiUrl":"https:\x2F\x2Fwww.netflix.com\x2Fapi\x2Fshakti\x2Fmre",'
+            .'"BUILD_IDENTIFIER":"v6c030968"</body>';
     }
 
     private function anchorMaturity(): array
     {
         return [
-            '81186615' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
-            '81315367' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
+            '81009946' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
+            '81474560' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
             '70153373' => ['maturity' => ['rating' => ['maturityLevel' => 70]]],
         ];
     }
@@ -69,8 +71,8 @@ class StreamingVerifyKidsTest extends TestCase
     private function anchorSearch(): array
     {
         return [
-            'the thundermans' => [81186615],
-            'bigfoot family' => [81315367],
+            "gabby's dollhouse" => [81009946],
+            'storybots' => [81474560],
             'seinfeld' => [],   // control: not in kids
         ];
     }
@@ -164,8 +166,8 @@ class StreamingVerifyKidsTest extends TestCase
         Http::fake([
             'www.netflix.com/Kids' => Http::response($this->goodKidsHtml(), 200),
             '*pathEvaluator*' => Http::response(['value' => ['videos' => [
-                '81186615' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
-                '81315367' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
+                '81009946' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
+                '81474560' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
                 '70153373' => ['maturity' => ['rating' => ['maturityLevel' => 70]]],
                 '555' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
                 '666' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
@@ -173,12 +175,13 @@ class StreamingVerifyKidsTest extends TestCase
             'web.prod.cloud.netflix.com/graphql' => function ($request) {
                 $term = json_decode($request->body(), true)['variables']['searchTerm'] ?? '';
                 if ($term === 'Broken Toon') {
-                    throw new \Illuminate\Http\Client\ConnectionException('TLS eof');
+                    throw new ConnectionException('TLS eof');
                 }
-                $ids = ['the thundermans' => [81186615], 'bigfoot family' => [81315367],
-                        'seinfeld' => [], 'Good Toon' => [555]];
-                $nodes = array_map(fn ($i) => '{"node":{"videoId":' . $i . '}}', $ids[$term] ?? []);
-                return Http::response('{"data":{"search":{"edges":[' . implode(',', $nodes) . ']}}}', 200);
+                $ids = ["gabby's dollhouse" => [81009946], 'storybots' => [81474560],
+                    'seinfeld' => [], 'Good Toon' => [555]];
+                $nodes = array_map(fn ($i) => '{"node":{"videoId":'.$i.'}}', $ids[$term] ?? []);
+
+                return Http::response('{"data":{"search":{"edges":['.implode(',', $nodes).']}}}', 200);
             },
         ]);
 

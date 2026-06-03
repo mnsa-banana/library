@@ -13,7 +13,10 @@ class StreamingVerifyKids extends Command
 
     protected $description = 'Verify which US Netflix titles are surfaced in the Kids profile and update streaming_titles.';
 
-    private const ANCHORS_IN = [81186615 => 'the thundermans', 81315367 => 'bigfoot family'];
+    // Durable in-catalog anchors: Netflix-owned Kids Originals, which (unlike licensed titles)
+    // are not removed from the catalog, so the all-must-surface session gate can't rot.
+    private const ANCHORS_IN = [81009946 => "gabby's dollhouse", 81474560 => 'storybots'];
+
     private const ANCHOR_OUT = [70153373 => 'seinfeld'];
 
     /** Flush bulk writes every N processed titles — bounds crash-loss + checked_at skew while avoiding 1 UPDATE/title. */
@@ -34,7 +37,7 @@ class StreamingVerifyKids extends Command
         if ($badLinks > 0) {
             $this->warn("  {$badLinks} Netflix offer link(s) had no numeric /title/<id> — left unverified.");
         }
-        $this->info('Candidates: ' . count($byNf) . ' currently-playable US Netflix titles to verify.');
+        $this->info('Candidates: '.count($byNf).' currently-playable US Netflix titles to verify.');
 
         $levels = $this->fetchMaturity($client, $byNf, $session);
         if ($levels === null) {
@@ -52,7 +55,7 @@ class StreamingVerifyKids extends Command
             $session = $client->probeSession();
             if (($session['country'] ?? null) !== 'US' || ! ($session['is_kids'] ?? false)
                 || empty($session['auth_url']) || empty($session['shakti_url']) || empty($session['app_version'])) {
-                $this->abort('not a US Kids session (country=' . ($session['country'] ?? 'null') . ', is_kids=' . var_export($session['is_kids'] ?? null, true) . ')');
+                $this->abort('not a US Kids session (country='.($session['country'] ?? 'null').', is_kids='.var_export($session['is_kids'] ?? null, true).')');
 
                 return null;
             }
@@ -90,7 +93,7 @@ class StreamingVerifyKids extends Command
                 return null;
             }
         } catch (\Throwable $e) {
-            $this->abort('session validation failed: ' . $e->getMessage());
+            $this->abort('session validation failed: '.$e->getMessage());
 
             return null;
         }
@@ -162,7 +165,7 @@ class StreamingVerifyKids extends Command
         } catch (\Throwable $e) {
             $bar->finish();
             $this->newLine();
-            $this->abort('maturity fetch failed mid-run: ' . $e->getMessage());
+            $this->abort('maturity fetch failed mid-run: '.$e->getMessage());
 
             return null;
         }
@@ -231,6 +234,7 @@ class StreamingVerifyKids extends Command
                     $this->newLine();
                     $this->warn("  skip {$info['nfid']} ({$info['title']}): {$e->getMessage()}");
                     $bar->advance();
+
                     continue; // leave unchecked so a later run retries it
                 }
                 $didSearch = true;
@@ -262,7 +266,7 @@ class StreamingVerifyKids extends Command
     private function abort(string $why): int
     {
         $this->error("Netflix Kids verification aborted: $why. No data written. "
-            . 'Refresh NETFLIX_KIDS_COOKIE (US VPN, Kids profile) and/or NETFLIX_KIDS_PERSISTED_QUERY_ID.');
+            .'Refresh NETFLIX_KIDS_COOKIE (US VPN, Kids profile) and/or NETFLIX_KIDS_PERSISTED_QUERY_ID.');
 
         return self::FAILURE;
     }
