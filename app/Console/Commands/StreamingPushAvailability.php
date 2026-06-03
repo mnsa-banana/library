@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -25,27 +26,33 @@ class StreamingPushAvailability extends Command
             return self::FAILURE;
         }
 
-        $imdbIds = DB::table('streaming_title_offers as sto')
-            ->join('streaming_titles as st', 'st.id', '=', 'sto.title_id')
-            ->where('sto.service_id', 'netflix')
-            ->where('sto.region', 'US')
-            ->where('sto.type', 'subscription')
-            ->whereNotNull('st.imdb_id')
-            ->where('st.imdb_id', '!=', '')
+        $imdbIds = $this->netflixUsQuery()
             ->distinct()
             ->pluck('st.imdb_id')
             ->sort()
             ->values()
             ->all();
 
-        $this->info('Computed '.count($imdbIds).' distinct Netflix-US imdb_ids.');
+        $kidsImdbIds = $this->netflixUsQuery()
+            ->where('st.netflix_kids_surfaced', true)
+            ->distinct()
+            ->pluck('st.imdb_id')
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->info(sprintf(
+            'Computed %d distinct Netflix-US imdb_ids (%d confirmed in Kids).',
+            count($imdbIds),
+            count($kidsImdbIds)
+        ));
 
         $url = rtrim($baseUrl, '/').'/api/v1/internal/netflix-availability';
         $response = Http::timeout($timeout)
             ->retry(1, 1000)
             ->withToken($token)
             ->acceptJson()
-            ->post($url, ['imdb_ids' => $imdbIds]);
+            ->post($url, ['imdb_ids' => $imdbIds, 'kids_imdb_ids' => $kidsImdbIds]);
 
         if ($response->failed()) {
             Log::error('streaming:push-availability — MNSA push failed', [
@@ -61,5 +68,20 @@ class StreamingPushAvailability extends Command
         $this->info('MNSA acknowledged: '.json_encode($summary));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Base query for distinct, imdb-identified, currently-tracked US Netflix subscription titles.
+     * Shared by the full availability push and the Kids subset so the two can't drift.
+     */
+    private function netflixUsQuery(): Builder
+    {
+        return DB::table('streaming_title_offers as sto')
+            ->join('streaming_titles as st', 'st.id', '=', 'sto.title_id')
+            ->where('sto.service_id', 'netflix')
+            ->where('sto.region', 'US')
+            ->where('sto.type', 'subscription')
+            ->whereNotNull('st.imdb_id')
+            ->where('st.imdb_id', '!=', '');
     }
 }

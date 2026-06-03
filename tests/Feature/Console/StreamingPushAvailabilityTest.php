@@ -16,6 +16,7 @@ class StreamingPushAvailabilityTest extends TestCase
         Http::fake([
             '*' => Http::response([
                 'matched' => 2, 'missing' => 0, 'marked_true' => 2, 'marked_false' => 0,
+                'kids_marked_true' => 1, 'kids_marked_false' => 0,
             ], 200),
         ]);
 
@@ -24,15 +25,16 @@ class StreamingPushAvailabilityTest extends TestCase
             'services.mnsa.service_token' => 'test-token',
         ]);
 
-        // Seed two streaming titles on Netflix US.
         DB::table('streaming_services')->insert(['id' => 'netflix', 'name' => 'Netflix']);
         DB::table('streaming_titles')->insert([
-            ['id' => 1, 'imdb_id' => 'tt0000001', 'title' => 'A', 'show_type' => 'movie'],
-            ['id' => 2, 'imdb_id' => 'tt0000002', 'title' => 'B', 'show_type' => 'movie'],
+            ['id' => 1, 'imdb_id' => 'tt0000001', 'title' => 'A', 'show_type' => 'movie', 'netflix_kids_surfaced' => true],
+            ['id' => 2, 'imdb_id' => 'tt0000002', 'title' => 'B', 'show_type' => 'movie', 'netflix_kids_surfaced' => false],
+            ['id' => 3, 'imdb_id' => 'tt0000003', 'title' => 'C', 'show_type' => 'movie', 'netflix_kids_surfaced' => null],
         ]);
         DB::table('streaming_title_offers')->insert([
             ['title_id' => 1, 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription', 'link' => ''],
             ['title_id' => 2, 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription', 'link' => ''],
+            ['title_id' => 3, 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription', 'link' => ''],
         ]);
 
         $this->artisan('streaming:push-availability')->assertExitCode(0);
@@ -40,7 +42,8 @@ class StreamingPushAvailabilityTest extends TestCase
         Http::assertSent(function ($request) {
             return $request->url() === 'https://mnsa.test/api/v1/internal/netflix-availability'
                 && $request->method() === 'POST'
-                && $request['imdb_ids'] === ['tt0000001', 'tt0000002']
+                && $request['imdb_ids'] === ['tt0000001', 'tt0000002', 'tt0000003']
+                && $request['kids_imdb_ids'] === ['tt0000001']
                 && $request->header('Authorization')[0] === 'Bearer test-token';
         });
     }
