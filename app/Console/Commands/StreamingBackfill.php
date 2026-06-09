@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\StreamingService;
 use App\Models\StreamingSyncLog;
 use App\Models\StreamingTitle;
 use App\Models\StreamingTitleOffer;
@@ -41,6 +42,7 @@ class StreamingBackfill extends Command
     ];
 
     protected $signature = 'streaming:backfill {--catalog=* : Restrict to a subset of catalogs (slug.type)}';
+
     protected $description = 'Initial one-time backfill of US streaming catalogs into streaming_titles + streaming_title_offers';
 
     public function handle(): int
@@ -72,7 +74,9 @@ class StreamingBackfill extends Command
                         'catalogs' => $catalog,
                         'series_granularity' => 'show',
                     ];
-                    if ($cursor) $params['cursor'] = $cursor;
+                    if ($cursor) {
+                        $params['cursor'] = $cursor;
+                    }
 
                     $resp = $client->get('/shows/search/filters', $params);
                     $shows = $resp['shows'] ?? [];
@@ -86,8 +90,8 @@ class StreamingBackfill extends Command
                     $cursor = $resp['nextCursor'] ?? null;
                     $log->update(['last_cursor' => $cursor, 'titles_processed' => $titlesProcessed]);
                     $page++;
-                    $this->line("  {$catalog} page {$page}: " . count($shows) . " shows (cumulative {$titlesProcessed}, calls={$log->fresh()->api_calls_used})");
-                } while (!empty($resp['hasMore']) && $cursor);
+                    $this->line("  {$catalog} page {$page}: ".count($shows)." shows (cumulative {$titlesProcessed}, calls={$log->fresh()->api_calls_used})");
+                } while (! empty($resp['hasMore']) && $cursor);
             }
 
             $log->update([
@@ -97,10 +101,12 @@ class StreamingBackfill extends Command
                 'titles_processed' => $titlesProcessed,
             ]);
             $this->info("Done. {$titlesProcessed} titles processed. Calls used: {$log->fresh()->api_calls_used}");
+
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $log->update(['status' => 'failed', 'completed_at' => now(), 'error_message' => $e->getMessage()]);
             $this->error("Backfill failed: {$e->getMessage()}");
+
             return self::FAILURE;
         }
     }
@@ -148,8 +154,11 @@ class StreamingBackfill extends Command
     /** Parse "movie/123" → ['movie', 123]. Returns [null, null] if input is null/malformed. */
     private function parseTmdbId(?string $tmdbId): array
     {
-        if (!$tmdbId || !str_contains($tmdbId, '/')) return [null, null];
+        if (! $tmdbId || ! str_contains($tmdbId, '/')) {
+            return [null, null];
+        }
         [$type, $id] = explode('/', $tmdbId, 2);
+
         return [$type, ctype_digit($id) ? (int) $id : null];
     }
 
@@ -157,34 +166,50 @@ class StreamingBackfill extends Command
     {
         $usOptions = $show['streamingOptions']['us'] ?? [];
 
-        // Preserve upcoming rows (available_from IS NOT NULL) for services that
-        // haven't dropped yet — they're not in this response's streamingOptions.
-        StreamingTitleOffer::where('title_id', $show['id'])
-            ->where('region', 'US')
-            ->whereNull('available_from')
-            ->delete();
-
+        // Seed any out-of-catalog services first (reference data), outside the
+        // per-title transaction so an offer-write rollback can't leave the
+        // in-process "ensured" cache out of sync with the actual rows.
         foreach ($usOptions as $opt) {
-            $price = $opt['price'] ?? null;
-            $expiresOn = isset($opt['expiresOn']) ? Carbon::createFromTimestamp($opt['expiresOn']) : null;
-
-            StreamingTitleOffer::updateOrCreate(
-                [
-                    'title_id' => $show['id'],
-                    'service_id' => $opt['service']['id'] ?? null,
-                    'region' => 'US',
-                    'type' => $opt['type'] ?? 'subscription',
-                    'video_quality' => $opt['quality'] ?? null,
-                ],
-                [
-                    'link' => $opt['link'] ?? '',
-                    'deep_link' => $opt['deepLink'] ?? null,
-                    'price_amount' => $price['amount'] ?? null,
-                    'price_currency' => $price['currency'] ?? null,
-                    'expires_on' => $expiresOn,
-                ],
-            );
+            StreamingService::ensureFromPayload($opt['service'] ?? null);
         }
+
+        // Atomic swap: the DELETE + re-inserts must be all-or-nothing, otherwise a
+        // mid-loop failure would leave the title with the old offers deleted and
+        // only a partial set re-inserted (silent data loss).
+        DB::transaction(function () use ($show, $usOptions) {
+            // Preserve upcoming rows (available_from IS NOT NULL) for services that
+            // haven't dropped yet — they're not in this response's streamingOptions.
+            StreamingTitleOffer::where('title_id', $show['id'])
+                ->where('region', 'US')
+                ->whereNull('available_from')
+                ->delete();
+
+            foreach ($usOptions as $opt) {
+                $serviceId = $opt['service']['id'] ?? null;
+                if (! $serviceId) {
+                    continue;
+                }
+                $price = $opt['price'] ?? null;
+                $expiresOn = isset($opt['expiresOn']) ? Carbon::createFromTimestamp($opt['expiresOn']) : null;
+
+                StreamingTitleOffer::updateOrCreate(
+                    [
+                        'title_id' => $show['id'],
+                        'service_id' => $serviceId,
+                        'region' => 'US',
+                        'type' => $opt['type'] ?? 'subscription',
+                        'video_quality' => $opt['quality'] ?? null,
+                    ],
+                    [
+                        'link' => $opt['link'] ?? '',
+                        'deep_link' => $opt['deepLink'] ?? null,
+                        'price_amount' => $price['amount'] ?? null,
+                        'price_currency' => $price['currency'] ?? null,
+                        'expires_on' => $expiresOn,
+                    ],
+                );
+            }
+        });
 
         StreamingTitle::where('id', $show['id'])
             ->update(['umbrella_services' => StreamingSync::collapsedServices($usOptions) ?: null]);

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\StreamingService;
 use App\Models\StreamingSyncLog;
 use App\Models\StreamingTitle;
 use App\Models\StreamingTitleOffer;
@@ -241,6 +242,10 @@ class StreamingSync extends Command
             $this->upsertTitle($show);
         }
 
+        // Seed the service if it isn't tracked yet — the upcoming feed references
+        // the same out-of-catalog services (roku etc.) as the changes feed.
+        StreamingService::ensureFromPayload($change['service'] ?? null);
+
         StreamingTitleOffer::updateOrCreate(
             [
                 'title_id' => $showId,
@@ -270,33 +275,49 @@ class StreamingSync extends Command
     {
         $usOptions = $show['streamingOptions']['us'] ?? [];
 
-        // Preserve upcoming rows (available_from IS NOT NULL) for services that
-        // haven't dropped yet — they're not in this response's streamingOptions.
-        StreamingTitleOffer::where('title_id', $show['id'])
-            ->where('region', 'US')
-            ->whereNull('available_from')
-            ->delete();
-
+        // Seed any out-of-catalog services first (reference data), outside the
+        // per-title transaction so an offer-write rollback can't leave the
+        // in-process "ensured" cache out of sync with the actual rows.
         foreach ($usOptions as $opt) {
-            $price = $opt['price'] ?? null;
-            $expiresOn = isset($opt['expiresOn']) ? Carbon::createFromTimestamp($opt['expiresOn']) : null;
-            StreamingTitleOffer::updateOrCreate(
-                [
-                    'title_id' => $show['id'],
-                    'service_id' => $opt['service']['id'] ?? null,
-                    'region' => 'US',
-                    'type' => $opt['type'] ?? 'subscription',
-                    'video_quality' => $opt['quality'] ?? null,
-                ],
-                [
-                    'link' => $opt['link'] ?? '',
-                    'deep_link' => $opt['deepLink'] ?? null,
-                    'price_amount' => $price['amount'] ?? null,
-                    'price_currency' => $price['currency'] ?? null,
-                    'expires_on' => $expiresOn,
-                ],
-            );
+            StreamingService::ensureFromPayload($opt['service'] ?? null);
         }
+
+        // Atomic swap: the DELETE + re-inserts must be all-or-nothing, otherwise a
+        // mid-loop failure would leave the title with the old offers deleted and
+        // only a partial set re-inserted (silent data loss).
+        DB::transaction(function () use ($show, $usOptions) {
+            // Preserve upcoming rows (available_from IS NOT NULL) for services that
+            // haven't dropped yet — they're not in this response's streamingOptions.
+            StreamingTitleOffer::where('title_id', $show['id'])
+                ->where('region', 'US')
+                ->whereNull('available_from')
+                ->delete();
+
+            foreach ($usOptions as $opt) {
+                $serviceId = $opt['service']['id'] ?? null;
+                if (! $serviceId) {
+                    continue;
+                }
+                $price = $opt['price'] ?? null;
+                $expiresOn = isset($opt['expiresOn']) ? Carbon::createFromTimestamp($opt['expiresOn']) : null;
+                StreamingTitleOffer::updateOrCreate(
+                    [
+                        'title_id' => $show['id'],
+                        'service_id' => $serviceId,
+                        'region' => 'US',
+                        'type' => $opt['type'] ?? 'subscription',
+                        'video_quality' => $opt['quality'] ?? null,
+                    ],
+                    [
+                        'link' => $opt['link'] ?? '',
+                        'deep_link' => $opt['deepLink'] ?? null,
+                        'price_amount' => $price['amount'] ?? null,
+                        'price_currency' => $price['currency'] ?? null,
+                        'expires_on' => $expiresOn,
+                    ],
+                );
+            }
+        });
 
         StreamingTitle::where('id', $show['id'])
             ->update(['umbrella_services' => self::collapsedServices($usOptions) ?: null]);
