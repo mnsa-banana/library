@@ -40,6 +40,11 @@ return [
         'api_key' => env('STREAMING_AVAILABILITY_API_KEY'),
         'base_url' => env('STREAMING_AVAILABILITY_BASE_URL', 'https://api.movieofthenight.com/v4'),
         'qps' => (int) env('STREAMING_AVAILABILITY_QPS', 5),
+        // Per-request timeout (seconds). The /changes feed computes the whole response
+        // server-side before sending a byte, and that latency is erratic — most calls
+        // return in <10s but some spike to ~85s for the same ~300KB payload. Keep this
+        // above the observed tail; transient timeouts beyond it are retried.
+        'timeout' => (int) env('STREAMING_AVAILABILITY_TIMEOUT', 120),
     ],
 
     'netflix_kids' => [

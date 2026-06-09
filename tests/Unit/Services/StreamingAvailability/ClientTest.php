@@ -5,6 +5,7 @@ namespace Tests\Unit\Services\StreamingAvailability;
 use App\Models\StreamingSyncLog;
 use App\Services\StreamingAvailability\Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Tests\TestCase;
@@ -27,7 +28,7 @@ class ClientTest extends TestCase
             'api.example.test/v4/countries/us' => Http::response(['countryCode' => 'us', 'name' => 'United States'], 200),
         ]);
 
-        $result = (new Client())->get('/countries/us');
+        $result = (new Client)->get('/countries/us');
 
         $this->assertSame('us', $result['countryCode']);
         Http::assertSent(fn ($r) => $r->hasHeader('x-api-key', 'test-key'));
@@ -39,10 +40,9 @@ class ClientTest extends TestCase
             'api.example.test/v4/shows/search/filters*' => Http::response(['shows' => [], 'hasMore' => false], 200),
         ]);
 
-        (new Client())->get('/shows/search/filters', ['country' => 'us', 'catalogs' => 'netflix.subscription']);
+        (new Client)->get('/shows/search/filters', ['country' => 'us', 'catalogs' => 'netflix.subscription']);
 
-        Http::assertSent(fn ($r) =>
-            $r->url() === 'https://api.example.test/v4/shows/search/filters?country=us&catalogs=netflix.subscription'
+        Http::assertSent(fn ($r) => $r->url() === 'https://api.example.test/v4/shows/search/filters?country=us&catalogs=netflix.subscription'
         );
     }
 
@@ -54,7 +54,7 @@ class ClientTest extends TestCase
                 ->push(['ok' => true], 200),
         ]);
 
-        $result = (new Client())->get('/x');
+        $result = (new Client)->get('/x');
         $this->assertTrue($result['ok']);
     }
 
@@ -67,7 +67,7 @@ class ClientTest extends TestCase
                 ->push(['ok' => true], 200),
         ]);
 
-        $result = (new Client())->get('/x');
+        $result = (new Client)->get('/x');
         $this->assertTrue($result['ok']);
     }
 
@@ -79,7 +79,43 @@ class ClientTest extends TestCase
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessageMatches('/Streaming Availability API error 503/');
-        (new Client())->get('/x');
+        (new Client)->get('/x');
+    }
+
+    public function test_get_retries_on_connection_exception_then_succeeds(): void
+    {
+        $calls = 0;
+        Http::fake(function () use (&$calls) {
+            $calls++;
+            if ($calls === 1) {
+                throw new ConnectionException('cURL error 28: Operation timed out after 30002 milliseconds with 0 bytes received');
+            }
+
+            return Http::response(['ok' => true], 200);
+        });
+
+        $result = (new Client)->get('/x');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(2, $calls);
+    }
+
+    public function test_get_throws_after_connection_exception_retries_exhausted(): void
+    {
+        $calls = 0;
+        Http::fake(function () use (&$calls) {
+            $calls++;
+            throw new ConnectionException('cURL error 28: Operation timed out');
+        });
+
+        try {
+            (new Client)->get('/x');
+            $this->fail('Expected RuntimeException after exhausting connection retries');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('connection failed', $e->getMessage());
+        }
+
+        $this->assertSame(3, $calls);
     }
 
     public function test_get_does_not_retry_on_4xx_other_than_429(): void
@@ -89,7 +125,7 @@ class ClientTest extends TestCase
         ]);
 
         $this->expectException(RuntimeException::class);
-        (new Client())->get('/x');
+        (new Client)->get('/x');
         Http::assertSentCount(1);
     }
 
@@ -112,6 +148,6 @@ class ClientTest extends TestCase
         config(['services.streaming_availability.api_key' => null]);
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessageMatches('/STREAMING_AVAILABILITY_API_KEY/');
-        new Client();
+        new Client;
     }
 }
