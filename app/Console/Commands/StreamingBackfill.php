@@ -8,7 +8,6 @@ use App\Models\StreamingTitle;
 use App\Models\StreamingTitleOffer;
 use App\Services\StreamingAvailability\Client;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class StreamingBackfill extends Command
@@ -190,7 +189,7 @@ class StreamingBackfill extends Command
                     continue;
                 }
                 $price = $opt['price'] ?? null;
-                $expiresOn = isset($opt['expiresOn']) ? Carbon::createFromTimestamp($opt['expiresOn']) : null;
+                $expiresOn = StreamingTitleOffer::safeDatetime($opt['expiresOn'] ?? null);
 
                 StreamingTitleOffer::updateOrCreate(
                     [

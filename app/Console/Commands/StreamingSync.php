@@ -192,7 +192,7 @@ class StreamingSync extends Command
         }
 
         if ($type === 'expiring') {
-            $expiresAt = isset($change['timestamp']) ? Carbon::createFromTimestamp($change['timestamp']) : null;
+            $expiresAt = StreamingTitleOffer::safeDatetime($change['timestamp'] ?? null);
             $serviceId = explode('.', $catalog, 2)[0];
             $catalogType = explode('.', $catalog, 2)[1];
             StreamingTitleOffer::where('title_id', $showId)
@@ -256,7 +256,7 @@ class StreamingSync extends Command
             ],
             [
                 'link' => $change['link'] ?? '',
-                'available_from' => Carbon::createFromTimestamp($ts),
+                'available_from' => StreamingTitleOffer::safeDatetime($ts),
             ],
         );
     }
@@ -299,7 +299,7 @@ class StreamingSync extends Command
                     continue;
                 }
                 $price = $opt['price'] ?? null;
-                $expiresOn = isset($opt['expiresOn']) ? Carbon::createFromTimestamp($opt['expiresOn']) : null;
+                $expiresOn = StreamingTitleOffer::safeDatetime($opt['expiresOn'] ?? null);
                 StreamingTitleOffer::updateOrCreate(
                     [
                         'title_id' => $show['id'],

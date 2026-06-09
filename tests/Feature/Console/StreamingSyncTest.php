@@ -107,4 +107,58 @@ class StreamingSyncTest extends TestCase
             ->orderByDesc('id')->value('metadata');
         $this->assertSame(0, json_decode($meta, true)['failed']);
     }
+
+    public function test_clamps_far_future_expiry_sentinel_without_failing_the_change(): void
+    {
+        $this->cfg();
+        DB::table('streaming_services')->insert(['id' => 'netflix', 'name' => 'Netflix']);
+
+        $payload = [
+            'id' => 'show-2',
+            'title' => 'Perpetual Catalog Show',
+            'showType' => 'series',
+            'streamingOptions' => ['us' => [[
+                'service' => ['id' => 'netflix', 'name' => 'Netflix'],
+                'type' => 'subscription',
+                'quality' => 'hd',
+                'link' => 'https://www.netflix.com/title/2',
+                // "Never expires" sentinel from the API — large enough to land in
+                // year 10000, which PHP can format but not re-parse (the cast
+                // round-trip throws "Double time specification").
+                'expiresOn' => 253402318799,
+            ]]],
+        ];
+
+        Http::fake(function ($request) use ($payload) {
+            $url = $request->url();
+            if (str_contains($url, '/changes')) {
+                parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $q);
+                $isTarget = ($q['catalogs'] ?? '') === 'netflix.subscription'
+                    && ($q['change_type'] ?? '') === 'new';
+
+                return Http::response($isTarget
+                    ? ['changes' => [['showId' => 'show-2']], 'shows' => ['show-2' => $payload], 'hasMore' => false]
+                    : ['changes' => [], 'shows' => [], 'hasMore' => false], 200);
+            }
+
+            return Http::response(['matched' => 0, 'marked_true' => 0, 'marked_false' => 0,
+                'kids_marked_true' => 0, 'kids_marked_false' => 0], 200);
+        });
+
+        $this->artisan('streaming:sync', ['--hours' => 72])->assertSuccessful();
+
+        // The far-future sentinel must not blow up the change...
+        $meta = DB::table('streaming_sync_log')->where('sync_type', 'changes')
+            ->orderByDesc('id')->value('metadata');
+        $this->assertSame(0, json_decode($meta, true)['failed'],
+            'far-future expiry sentinel must not fail the change');
+
+        // ...and the offer must persist with a parseable, clamped expiry.
+        $offer = DB::table('streaming_title_offers')
+            ->where('title_id', 'show-2')->where('service_id', 'netflix')->first();
+        $this->assertNotNull($offer, 'offer with sentinel expiry should persist');
+        $this->assertNotNull($offer->expires_on);
+        $this->assertSame(9999, \Illuminate\Support\Carbon::parse($offer->expires_on)->year,
+            'sentinel expiry should be clamped to the max parseable year');
+    }
 }
