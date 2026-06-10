@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\ValidatesHoursOption;
 use App\Models\StreamingService;
 use App\Models\StreamingSyncLog;
 use App\Models\StreamingTitle;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 class StreamingSync extends Command
 {
+    use ValidatesHoursOption;
+
     private const CATALOGS = [
         'netflix.subscription',
         'prime.subscription', 'prime.rent', 'prime.buy', 'prime.free',
@@ -51,13 +54,17 @@ class StreamingSync extends Command
 
     public function handle(): int
     {
+        $hours = $this->validatedHoursOption();
+        if ($hours === null) {
+            return self::INVALID;
+        }
+
         // /changes responses bundle full show payloads keyed by id, which can run
         // tens of MB per page. PHP's allocator keeps the high-water mark across
         // iterations, so the 128M default is not enough for the full catalog sweep.
         ini_set('memory_limit', '512M');
         DB::connection()->disableQueryLog();
 
-        $hours = (int) $this->option('hours');
         $to = Carbon::now()->getTimestamp();
         $from = Carbon::now()->subHours($hours)->getTimestamp();
 

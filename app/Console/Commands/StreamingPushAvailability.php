@@ -48,11 +48,22 @@ class StreamingPushAvailability extends Command
         ));
 
         $url = rtrim($baseUrl, '/').'/api/v1/internal/netflix-availability';
-        $response = Http::timeout($timeout)
-            ->retry(1, 1000)
-            ->withToken($token)
-            ->acceptJson()
-            ->post($url, ['imdb_ids' => $imdbIds, 'kids_imdb_ids' => $kidsImdbIds]);
+
+        try {
+            $response = Http::timeout($timeout)
+                ->retry(1, 1000, throw: false)
+                ->withToken($token)
+                ->acceptJson()
+                ->post($url, ['imdb_ids' => $imdbIds, 'kids_imdb_ids' => $kidsImdbIds]);
+        } catch (\Throwable $e) {
+            Log::error('streaming:push-availability — MNSA push threw', [
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+            $this->error('Push failed: '.$e->getMessage());
+
+            return self::FAILURE;
+        }
 
         if ($response->failed()) {
             Log::error('streaming:push-availability — MNSA push failed', [

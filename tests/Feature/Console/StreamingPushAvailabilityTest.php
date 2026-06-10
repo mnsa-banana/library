@@ -3,6 +3,7 @@
 namespace Tests\Feature\Console;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -46,5 +47,31 @@ class StreamingPushAvailabilityTest extends TestCase
                 && $request['kids_imdb_ids'] === ['tt0000001']
                 && $request->header('Authorization')[0] === 'Bearer test-token';
         });
+    }
+
+    public function test_returns_failure_when_the_push_cannot_connect(): void
+    {
+        Http::fake(function () {
+            throw new ConnectionException('cURL error 28: connection timed out');
+        });
+
+        config([
+            'services.mnsa.base_url' => 'https://mnsa.test',
+            'services.mnsa.service_token' => 'test-token',
+        ]);
+
+        $this->artisan('streaming:push-availability')->assertExitCode(1);
+    }
+
+    public function test_returns_failure_when_mnsa_responds_with_an_error_status(): void
+    {
+        Http::fake(['*' => Http::response(['message' => 'nope'], 500)]);
+
+        config([
+            'services.mnsa.base_url' => 'https://mnsa.test',
+            'services.mnsa.service_token' => 'test-token',
+        ]);
+
+        $this->artisan('streaming:push-availability')->assertExitCode(1);
     }
 }

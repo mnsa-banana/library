@@ -3,6 +3,7 @@
 namespace Tests\Feature\Console;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -158,7 +159,19 @@ class StreamingSyncTest extends TestCase
             ->where('title_id', 'show-2')->where('service_id', 'netflix')->first();
         $this->assertNotNull($offer, 'offer with sentinel expiry should persist');
         $this->assertNotNull($offer->expires_on);
-        $this->assertSame(9999, \Illuminate\Support\Carbon::parse($offer->expires_on)->year,
+        $this->assertSame(9999, Carbon::parse($offer->expires_on)->year,
             'sentinel expiry should be clamped to the max parseable year');
+    }
+
+    public function test_rejects_invalid_hours_before_doing_any_work(): void
+    {
+        Http::fake();
+
+        $this->artisan('streaming:sync', ['--hours' => 'abc'])->assertExitCode(2);
+        $this->artisan('streaming:sync', ['--hours' => 0])->assertExitCode(2);
+        $this->artisan('streaming:sync', ['--hours' => 999999])->assertExitCode(2);
+
+        Http::assertNothingSent();
+        $this->assertSame(0, DB::table('streaming_sync_log')->count());
     }
 }
