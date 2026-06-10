@@ -163,6 +163,19 @@ class StreamingSyncTest extends TestCase
             'sentinel expiry should be clamped to the max parseable year');
     }
 
+    public function test_does_not_push_availability_itself(): void
+    {
+        $this->cfg();
+        DB::table('streaming_services')->insert(['id' => 'netflix', 'name' => 'Netflix']);
+        $this->fakeChanges();
+
+        $this->artisan('streaming:sync', ['--hours' => 72])->assertSuccessful();
+
+        // The MNSA push belongs to streaming:update as its final pipeline step;
+        // sync pushing too would hit MNSA twice per run.
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'mnsa.test'));
+    }
+
     public function test_rejects_invalid_hours_before_doing_any_work(): void
     {
         Http::fake();

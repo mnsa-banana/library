@@ -162,13 +162,6 @@ class StreamingSync extends Command
             $this->info(sprintf('Done. new=%d updated=%d removed=%d expiring=%d upcoming=%d failed=%d. Calls=%d',
                 $stats['new'], $stats['updated'], $stats['removed'], $stats['expiring'], $stats['upcoming'], $stats['failed'],
                 $log->fresh()->api_calls_used));
-            $this->info('Pushing Netflix availability to MNSA…');
-            $pushExit = $this->call('streaming:push-availability');
-            if ($pushExit !== self::SUCCESS) {
-                // Do not fail streaming:sync — the streaming data on Sponge is already saved.
-                // The push is idempotent and will be retried on the next sync run.
-                $this->warn('streaming:push-availability returned exit code '.$pushExit.' — sync data is saved; will retry next run.');
-            }
 
             return self::SUCCESS;
         } catch (\Throwable $e) {
