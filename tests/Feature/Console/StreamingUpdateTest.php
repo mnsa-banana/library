@@ -16,20 +16,29 @@ class StreamingUpdateTest extends TestCase
      * shadows the real commands, so the orchestration is tested without real APIs.
      *
      * @param  array<string, int>  $failCodes  signature => non-zero exit code
+     * @param  array<int, string>  $throwSteps  signatures that throw instead of returning
      */
-    private function stubSteps(array $failCodes = []): void
+    private function stubSteps(array $failCodes = [], array $throwSteps = []): void
     {
         $calls = &$this->calls;
 
-        Artisan::command('streaming:sync {--hours=}', function () use (&$calls, $failCodes) {
+        Artisan::command('streaming:sync {--hours=}', function () use (&$calls, $failCodes, $throwSteps) {
             $calls[] = 'streaming:sync:'.$this->option('hours');
+
+            if (in_array('streaming:sync', $throwSteps, true)) {
+                throw new \RuntimeException('boom');
+            }
 
             return $failCodes['streaming:sync'] ?? 0;
         });
 
         foreach (['streaming:enrich', 'streaming:verify-kids', 'streaming:push-availability'] as $name) {
-            Artisan::command($name, function () use (&$calls, $name, $failCodes) {
+            Artisan::command($name, function () use (&$calls, $name, $failCodes, $throwSteps) {
                 $calls[] = $name;
+
+                if (in_array($name, $throwSteps, true)) {
+                    throw new \RuntimeException('boom');
+                }
 
                 return $failCodes[$name] ?? 0;
             });
@@ -71,5 +80,38 @@ class StreamingUpdateTest extends TestCase
             'streaming:verify-kids',
         ], $this->calls);
         $this->assertNotContains('streaming:push-availability', $this->calls);
+    }
+
+    public function test_returns_failure_and_skips_remaining_steps_when_a_step_throws(): void
+    {
+        $this->stubSteps(throwSteps: ['streaming:verify-kids']);
+
+        $this->artisan('streaming:update')->assertExitCode(1);
+
+        $this->assertSame([
+            'streaming:sync:72',
+            'streaming:enrich',
+            'streaming:verify-kids',
+        ], $this->calls);
+        $this->assertNotContains('streaming:push-availability', $this->calls);
+    }
+
+    public function test_rejects_non_integer_hours_without_running_any_step(): void
+    {
+        $this->stubSteps();
+
+        $this->artisan('streaming:update', ['--hours' => 'abc'])->assertExitCode(2);
+
+        $this->assertSame([], $this->calls);
+    }
+
+    public function test_rejects_non_positive_hours_without_running_any_step(): void
+    {
+        $this->stubSteps();
+
+        $this->artisan('streaming:update', ['--hours' => 0])->assertExitCode(2);
+        $this->artisan('streaming:update', ['--hours' => -5])->assertExitCode(2);
+
+        $this->assertSame([], $this->calls);
     }
 }
