@@ -26,24 +26,34 @@ return new class extends Migration
         // Books index FIRST so book upserts never lack a conflict target.
         DB::statement(
             'CREATE UNIQUE INDEX IF NOT EXISTS uq_reports_books_title_year '
-            . 'ON reports (content_type, title, year) WHERE tmdb_id IS NULL'
+            .'ON reports (content_type, title, year) WHERE tmdb_id IS NULL'
         );
         DB::statement(
             'CREATE UNIQUE INDEX IF NOT EXISTS uq_reports_content_type_tmdb_id '
-            . 'ON reports (content_type, tmdb_id) WHERE tmdb_id IS NOT NULL'
+            .'ON reports (content_type, tmdb_id) WHERE tmdb_id IS NOT NULL'
         );
-        DB::statement('ALTER TABLE reports DROP CONSTRAINT IF EXISTS uq_content');
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE reports DROP CONSTRAINT IF EXISTS uq_content');
+        }
         // Some environments may carry uq_content as a bare index rather
         // than a constraint (create_all-era drift) — drop that form too.
+        // (SQLite test runs also land here: its unique constraints are indexes.)
         DB::statement('DROP INDEX IF EXISTS uq_content');
     }
 
     public function down(): void
     {
-        DB::statement(
-            'ALTER TABLE reports ADD CONSTRAINT uq_content '
-            . 'UNIQUE (content_type, title, year)'
-        );
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement(
+                'ALTER TABLE reports ADD CONSTRAINT uq_content '
+                .'UNIQUE (content_type, title, year)'
+            );
+        } else {
+            DB::statement(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_content '
+                .'ON reports (content_type, title, year)'
+            );
+        }
         DB::statement('DROP INDEX IF EXISTS uq_reports_content_type_tmdb_id');
         DB::statement('DROP INDEX IF EXISTS uq_reports_books_title_year');
     }
