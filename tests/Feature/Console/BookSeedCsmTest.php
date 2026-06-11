@@ -388,6 +388,48 @@ class BookSeedCsmTest extends TestCase
         $this->assertSame(3, $resumeLog->titles_processed);
     }
 
+    public function test_open_library_429_on_first_new_url_of_resume_run_preserves_inherited_cursor(): void
+    {
+        // Backoff injected to 0 — the OL client must not sleep between retries.
+        $this->app->instance(OpenLibraryClient::class, new OpenLibraryClient(backoffBaseMs: 0));
+
+        // A prior interrupted run left a real cursor behind.
+        $prior = SyncRun::start('seed_csm');
+        $prior->cursor(self::BASE.'/book-reviews/charlottes-web');
+        $prior->fail('interrupted');
+
+        // OL rate-limits persistently on the FIRST new URL's ISBN (3 attempts
+        // = one exhausted retry loop), then recovers for the follow-up resume.
+        $this->fakeCsm([
+            'openlibrary.org/isbn/9780316381994.json' => Http::sequence()
+                ->pushStatus(429)->pushStatus(429)->pushStatus(429)
+                ->whenEmpty(Http::response(['error' => 'notfound'], 404)),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'csm', '--resume' => true])->assertExitCode(0);
+
+        $this->assertSame(0, BookLibraryTitle::count());
+
+        // The 429 hit before this run's first checkpoint ($lastProcessed is
+        // null), but the run INHERITED a cursor via --resume: that position
+        // must be preserved — persisting the '' sentinel here would wipe it
+        // and make the next --resume restart from scratch.
+        $log = BookSyncLog::orderByDesc('id')->first();
+        $this->assertSame('completed', $log->status);
+        $this->assertFalse($log->metadata['exhausted']);
+        $this->assertSame(self::BASE.'/book-reviews/charlottes-web', $log->last_cursor);
+
+        // A subsequent --resume continues from the same position: only the
+        // one still-unprocessed URL is fetched and ingested.
+        $this->artisan('book:seed', ['--source' => 'csm', '--resume' => true])->assertExitCode(0);
+
+        $this->assertSame(1, BookLibraryTitle::count());
+        $this->assertNotNull(BookLibraryTitle::where('title', 'The Wild Robot')->first());
+        $resumeLog = BookSyncLog::orderByDesc('id')->first();
+        $this->assertTrue($resumeLog->metadata['exhausted']);
+        $this->assertSame(1, $resumeLog->titles_processed);
+    }
+
     public function test_empty_walk_fails_run_instead_of_completing_exhausted(): void
     {
         // A walk yielding zero URLs must NOT look like a finished seed.

@@ -28,8 +28,13 @@ class BookLibraryTitle extends Model
         static::saving(function (self $title) {
             // Column limit: title/author are varchar(255) — scraper values are
             // unbounded and Postgres rejects anything longer (sqlite tests
-            // don't enforce it). Clamp BEFORE normalizing; the normalizer
-            // never lengthens, so the normalized fields stay ≤255 too.
+            // don't enforce it). Clamp BEFORE normalizing. Safety net only:
+            // WorkResolver::resolve() applies the same clamp at the ingest
+            // boundary and MUST stay in sync, or long titles never match
+            // their stored rows. Note the normalizer CAN lengthen (Str::ascii
+            // expands ß→ss), so a clamped value can still normalize past 255
+            // — the seed arms' QueryException catch is the backstop for
+            // normalized-column overflow.
             $title->title = mb_substr($title->title, 0, 255);
             if ($title->author !== null) {
                 $title->author = mb_substr($title->author, 0, 255);

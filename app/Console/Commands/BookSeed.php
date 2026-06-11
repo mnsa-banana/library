@@ -136,7 +136,7 @@ class BookSeed extends Command
                             'review_url' => $url,
                         ], $run);
                     } catch (OpenLibraryRateLimitedException) {
-                        return $this->stopOnOpenLibraryRateLimit($run, $url, $lastProcessed);
+                        return $this->stopOnOpenLibraryRateLimit($run, $url, $lastProcessed, $cursor);
                     } catch (QueryException $e) {
                         // A poison row (bad scraped data the DB rejects) is
                         // skipped like a parse miss — the cursor still
@@ -227,7 +227,7 @@ class BookSeed extends Command
                             'review_url' => $url,
                         ], $run);
                     } catch (OpenLibraryRateLimitedException) {
-                        return $this->stopOnOpenLibraryRateLimit($run, $url, $lastProcessed);
+                        return $this->stopOnOpenLibraryRateLimit($run, $url, $lastProcessed, $cursor);
                     } catch (QueryException $e) {
                         // A poison row (bad scraped data the DB rejects) is
                         // skipped like a parse miss — the cursor still
@@ -533,14 +533,17 @@ class BookSeed extends Command
      * processed URL — the current page is re-fetched next run.
      *
      * When the 429 hits BEFORE the run's first checkpoint ($lastProcessed is
-     * null), the cursor is set to the '' sentinel: it is non-null, so
+     * null), fall back to the cursor this run INHERITED via --resume — the
+     * prior position must survive a stop that processed nothing, or the next
+     * --resume restarts from scratch. Only when there is no inherited cursor
+     * either (fresh run) does the '' sentinel apply: it is non-null, so
      * SyncRun::lastCursor cannot fall back to an OLDER run's cursor (which
      * would make --resume silently no-op), and `$url <= ''` is false for
      * every URL, so a resume starts from the beginning.
      */
-    private function stopOnOpenLibraryRateLimit(SyncRun $run, string $url, ?string $lastProcessed): int
+    private function stopOnOpenLibraryRateLimit(SyncRun $run, string $url, ?string $lastProcessed, ?string $inheritedCursor): int
     {
-        $run->cursor($lastProcessed ?? '');
+        $run->cursor($lastProcessed ?? $inheritedCursor ?? '');
         $run->complete(['exhausted' => false]);
         $this->warn("Stopped (Open Library 429) before {$url}; cursor persisted — rerun with --resume.");
 

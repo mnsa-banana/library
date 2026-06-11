@@ -216,6 +216,34 @@ class WorkResolverTest extends TestCase
         $this->assertSame('Gary Paulsen', $row->fresh()->author);
     }
 
+    public function test_reingesting_a_long_title_matches_its_stored_row_instead_of_duplicating(): void
+    {
+        Http::fake();
+
+        // >255-char title and author, no ISBNs (the PluggedIn shape — title
+        // matching is the ONLY dedup path). The model's saving hook clamps
+        // stored title/author to 255, so the stored normalized_title derives
+        // from the CLAMPED value; the resolver must clamp the incoming values
+        // the same way or a re-ingest never matches its own row and every
+        // pass creates a fresh duplicate.
+        $item = [
+            'title' => 'The Complete Annotated Chronicle of '.str_repeat('Adventures ', 30),
+            'author' => 'Jane Marie '.str_repeat('Hyphenton-', 30).'Smith',
+        ];
+        $this->assertGreaterThan(255, mb_strlen($item['title']));
+        $this->assertGreaterThan(255, mb_strlen($item['author']));
+
+        $first = $this->resolver()->resolve($item);
+        $second = $this->resolver()->resolve($item);
+
+        $this->assertNotNull($first['title']);
+        $this->assertSame([], $second['ambiguous']);
+        $this->assertTrue($second['title']->is($first['title']));
+        $this->assertSame(1, BookLibraryTitle::count());
+        $this->assertLessThanOrEqual(255, mb_strlen($first['title']->fresh()->title));
+        Http::assertNothingSent();
+    }
+
     public function test_empty_normalized_title_never_matches_another_empty_normalized_row(): void
     {
         Http::fake();

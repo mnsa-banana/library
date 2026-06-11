@@ -37,6 +37,19 @@ class WorkResolver
             throw new InvalidArgumentException('WorkResolver item requires a title');
         }
 
+        // Column-limit clamp BEFORE any matching/creation — must match
+        // BookLibraryTitle's saving clamp or long titles never match their
+        // stored rows: stored normalized_title derives from the CLAMPED
+        // title, so normalizing the unclamped incoming value misses on every
+        // re-ingest and creates a fresh duplicate (ISBN-less sources like
+        // PluggedIn have no other dedup path). Same for author last-name
+        // agreement. The model hook stays as the safety net.
+        $incomingTitle = mb_substr($incomingTitle, 0, 255);
+        $item['title'] = $incomingTitle;
+        if (is_string($item['author'] ?? null)) {
+            $item['author'] = mb_substr($item['author'], 0, 255);
+        }
+
         $isbns = $this->normalizedIsbns($item['isbn13s'] ?? []);
 
         // Step 1: ISBN match against stored isbn13s.
