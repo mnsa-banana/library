@@ -3,6 +3,7 @@
 namespace Tests\Feature\Console;
 
 use App\Models\BookLibraryTitle;
+use App\Models\BookListMembership;
 use App\Models\BookSyncLog;
 use App\Services\BookLibrary\NytClient;
 use App\Services\BookLibrary\SyncRun;
@@ -208,6 +209,44 @@ class BookSeedNytHistoryTest extends TestCase
         $this->assertFalse($log->metadata['exhausted']);
         $this->assertSame('picture-books|2025-01-03', $log->last_cursor);
         $this->assertSame(3, $log->api_calls_used);
+    }
+
+    public function test_non_429_failure_mid_run_fails_log_and_keeps_prior_page_work(): void
+    {
+        // names + page 1 succeed; the page-2 fetch hits a server error.
+        $this->fakeHistory([
+            'api.nytimes.com/svc/books/v3/lists/2025-01-03/picture-books.json*' => Http::response([], 500),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'nyt-history'])->assertExitCode(1);
+
+        // Page-1 titles and memberships are kept.
+        $this->assertSame(2, BookLibraryTitle::count());
+        $this->assertSame(2, BookListMembership::count());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('failed', $log->status);
+        $this->assertStringContainsString('NYT request failed (500)', (string) $log->error_message);
+        // Last checkpoint is the processed page 1 — --resume re-fetches it
+        // (harmless membership upsert) and walks on from its previous date.
+        $this->assertSame('picture-books|2025-01-15', $log->last_cursor);
+    }
+
+    public function test_empty_lists_names_fails_run_instead_of_completing_exhausted(): void
+    {
+        // NYT 200 with no results array — must NOT look like a finished backfill.
+        Http::fake([
+            'api.nytimes.com/svc/books/v3/lists/names.json*' => Http::response(['status' => 'ERROR']),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'nyt-history'])->assertExitCode(1);
+
+        $this->assertSame(0, BookLibraryTitle::count());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('failed', $log->status);
+        $this->assertSame('NYT lists/names returned no lists', $log->error_message);
+        $this->assertSame(['/svc/books/v3/lists/names.json'], $this->nytPaths());
     }
 
     public function test_missing_api_key_exits_one_and_logs_failed_run(): void

@@ -64,6 +64,16 @@ class BookSeed extends Command
                 return self::SUCCESS;
             }
             $run->bumpApiCalls();
+
+            // NYT can 200 with no results; completing here would be
+            // indistinguishable from a finished backfill (exhausted=true).
+            if ($names === []) {
+                $run->fail('NYT lists/names returned no lists');
+                $this->error('NYT lists/names returned no lists.');
+
+                return self::FAILURE;
+            }
+
             $calls = 1;
             $pages = 0;
 

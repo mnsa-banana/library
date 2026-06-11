@@ -138,6 +138,23 @@ class BookWeeklyTest extends TestCase
         $this->assertSame(2, $log->api_calls_used);
     }
 
+    public function test_weekly_non_429_failure_exits_one_and_keeps_prior_list_work(): void
+    {
+        // First list succeeds, the second hits a server error.
+        $this->fakeCurrentLists([
+            'api.nytimes.com/svc/books/v3/lists/current/childrens-middle-grade-hardcover.json*' => Http::response([], 500),
+        ]);
+
+        $this->artisan('book:weekly')->assertExitCode(1);
+
+        // Titles from the list that succeeded before the failure are kept.
+        $this->assertSame(2, BookLibraryTitle::count());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('failed', $log->status);
+        $this->assertStringContainsString('NYT request failed (500)', (string) $log->error_message);
+    }
+
     public function test_weekly_without_api_key_exits_zero_and_logs_failed_run(): void
     {
         config(['services.nyt.books_key' => null]);
