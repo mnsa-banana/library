@@ -1,0 +1,25 @@
+{
+    "status": "OK",
+    "num_results": 1,
+    "results": {
+        "list_name": "Series Books",
+        "list_name_encoded": "series-books",
+        "published_date": "2026-06-14",
+        "previous_published_date": "2026-06-07",
+        "books": [
+            {
+                "rank": 1,
+                "weeks_on_list": 700,
+                "primary_isbn13": "9781338716474",
+                "primary_isbn10": "1338716476",
+                "title": "WINGS OF FIRE",
+                "author": "Tui T. Sutherland",
+                "description": "Dragonets fulfill a prophecy.",
+                "book_image": "https://storage.googleapis.com/du-prd/books/images/9781338716474.jpg",
+                "isbns": [
+                    {"isbn10": "1338716476", "isbn13": "9781338716474"}
+                ]
+            }
+        ]
+    }
+}

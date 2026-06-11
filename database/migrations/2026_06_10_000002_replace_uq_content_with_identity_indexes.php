@@ -39,6 +39,7 @@ return new class extends Migration
         }
         // Some environments may carry uq_content as a bare index rather
         // than a constraint (create_all-era drift) — drop that form too.
+        // (SQLite test runs also land here: its unique constraints are indexes.)
         DB::statement('DROP INDEX IF EXISTS uq_content');
     }
 
@@ -50,7 +51,10 @@ return new class extends Migration
                 .'UNIQUE (content_type, title, year)'
             );
         } else {
-            DB::statement('CREATE UNIQUE INDEX uq_content ON reports (content_type, title, year)');
+            DB::statement(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_content '
+                .'ON reports (content_type, title, year)'
+            );
         }
         DB::statement('DROP INDEX IF EXISTS uq_reports_content_type_tmdb_id');
         DB::statement('DROP INDEX IF EXISTS uq_reports_books_title_year');

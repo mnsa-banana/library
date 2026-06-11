@@ -1,0 +1,37 @@
+{
+    "status": "OK",
+    "num_results": 2,
+    "results": {
+        "list_name": "Picture Books",
+        "list_name_encoded": "picture-books",
+        "published_date": "2026-06-14",
+        "previous_published_date": "2026-06-07",
+        "books": [
+            {
+                "rank": 1,
+                "weeks_on_list": 98,
+                "primary_isbn13": "9781338236590",
+                "primary_isbn10": "1338236598",
+                "title": "DOG MAN",
+                "author": "Dav Pilkey",
+                "description": "A dog-headed police officer fights crime.",
+                "book_image": "https://storage.googleapis.com/du-prd/books/images/9781338236590.jpg",
+                "isbns": [
+                    {"isbn10": "1338236598", "isbn13": "9781338236590"},
+                    {"isbn10": "133823658X", "isbn13": "9781338236583"}
+                ]
+            },
+            {
+                "rank": 2,
+                "weeks_on_list": 12,
+                "primary_isbn13": "9780062866004",
+                "primary_isbn10": "0062866001",
+                "title": "THE GOOD EGG",
+                "author": "Jory John",
+                "description": "",
+                "book_image": "",
+                "isbns": []
+            }
+        ]
+    }
+}

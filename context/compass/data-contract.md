@@ -22,6 +22,8 @@
 
 **Streaming tables are independent.** `streaming_*` tables have no foreign keys to `reports`. They're linked at query time via `imdb_id`/`tmdb_id` matching, not database-level joins. Four tables: `streaming_services`, `streaming_titles`, `streaming_title_offers`, `streaming_sync_log`.
 
+**Book library tables are independent too.** `book_library_titles`, `book_list_memberships`, `book_sync_log` have no foreign keys to `reports` — the catalog is populated by artisan seed/enrich commands, not the publish pipeline. See `context/compass/book-library.md`.
+
 **`streaming_titles` uses soft-deletes** (`deleted_at`) to purge TMDB-404 spam without losing the row for inspection. Offers are stored in `streaming_title_offers` (normalized, one row per title+service+region+type+quality). See `context/compass/watchmode.md` for historical context.
 
 **Offer rows can represent future availability.** `streaming_title_offers.available_from` is non-null for upcoming drops captured by `/changes?change_type=upcoming` (Apple/Disney/Max/Netflix/Prime only). Read-side queries must treat `available_from IS NULL OR available_from <= NOW()` as "available now" — otherwise upcoming offers leak into "where to watch right now" responses.

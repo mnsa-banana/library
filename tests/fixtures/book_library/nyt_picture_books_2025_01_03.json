@@ -1,0 +1,25 @@
+{
+    "status": "OK",
+    "num_results": 1,
+    "results": {
+        "list_name": "Picture Books",
+        "list_name_encoded": "picture-books",
+        "published_date": "2025-01-03",
+        "previous_published_date": "2024-11-20",
+        "books": [
+            {
+                "rank": 1,
+                "weeks_on_list": 150,
+                "primary_isbn13": "9780547248288",
+                "primary_isbn10": "0547248288",
+                "title": "LITTLE BLUE TRUCK",
+                "author": "Alice Schertle",
+                "description": "A small truck helps his farm-animal friends.",
+                "book_image": "https://storage.googleapis.com/du-prd/books/images/9780547248288.jpg",
+                "isbns": [
+                    {"isbn10": "0547248288", "isbn13": "9780547248288"}
+                ]
+            }
+        ]
+    }
+}

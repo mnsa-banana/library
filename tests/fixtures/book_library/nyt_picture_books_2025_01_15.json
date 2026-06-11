@@ -1,0 +1,38 @@
+{
+    "status": "OK",
+    "num_results": 2,
+    "results": {
+        "list_name": "Picture Books",
+        "list_name_encoded": "picture-books",
+        "published_date": "2025-01-15",
+        "previous_published_date": "2025-01-03",
+        "books": [
+            {
+                "rank": 1,
+                "weeks_on_list": 5,
+                "primary_isbn13": "9780593519430",
+                "primary_isbn10": "0593519434",
+                "title": "SLEEPYTIME",
+                "author": "Penny Dale",
+                "description": "Bedtime rituals for little ones.",
+                "book_image": "https://storage.googleapis.com/du-prd/books/images/9780593519430.jpg",
+                "isbns": [
+                    {"isbn10": "0593519434", "isbn13": "9780593519430"}
+                ]
+            },
+            {
+                "rank": 2,
+                "weeks_on_list": 80,
+                "primary_isbn13": "9780593119457",
+                "primary_isbn10": "0593119452",
+                "title": "GRUMPY MONKEY",
+                "author": "Suzanne Lang",
+                "description": "Jim Panzee is in a bad mood.",
+                "book_image": "https://storage.googleapis.com/du-prd/books/images/9780593119457.jpg",
+                "isbns": [
+                    {"isbn10": "0593119452", "isbn13": "9780593119457"}
+                ]
+            }
+        ]
+    }
+}
