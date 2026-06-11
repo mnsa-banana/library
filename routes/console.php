@@ -19,3 +19,8 @@ Schedule::command('streaming:refresh-services')->monthlyOn(1, '02:00');
 // Weekly (Thursdays): sync the current NYT children's bestseller lists into
 // the book library. No-ops gracefully (exit 0) when NYT_BOOKS_API_KEY is unset.
 Schedule::command('book:weekly')->weeklyOn(4, '09:00')->withoutOverlapping();
+
+// Weekly (Thursdays, an hour after book:weekly so fresh rows are included):
+// enrich pending library rows via Open Library + Google Books. Self-budgeting
+// (900-call ceiling, quota-stop) and naturally resumable via enriched_at.
+Schedule::command('book:enrich')->weeklyOn(4, '10:00')->withoutOverlapping();

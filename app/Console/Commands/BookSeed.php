@@ -12,17 +12,22 @@ use Illuminate\Console\Command;
 
 /**
  * Book-library seed entry point. Each `--source` is an independent arm with
- * its own sync_type, cursor format, and resume semantics; further arms
- * (wkar, award) land with later tasks.
+ * its own sync_type, cursor format, and resume semantics. The wkar/award arms
+ * are local-file imports (no HTTP of their own; small files, no cursor —
+ * re-runs upsert).
  */
 class BookSeed extends Command
 {
     /** NYT allows ~500 calls/day — leave headroom for book:weekly. */
     private const NYT_MAX_CALLS_PER_RUN = 450;
 
+    /** WKAR grade band → min_age (spec §Seed sources; min_age_source='wkar'). */
+    private const WKAR_GRADE_BAND_MIN_AGE = ['K-2' => 5, '3-5' => 8, '6-8' => 11, '9-12' => 14];
+
     protected $signature = 'book:seed
-        {--source= : Seed source (csm|pluggedin|nyt-history)}
-        {--limit= : Maximum pages to fetch this run}
+        {--source= : Seed source (csm|pluggedin|nyt-history|wkar|award)}
+        {--file= : Path to a structured JSON import file (wkar|award)}
+        {--limit= : Maximum pages/entries to process this run}
         {--resume : Continue from the last persisted cursor for this source}';
 
     protected $description = 'Seed the book library from a list source';
@@ -33,6 +38,8 @@ class BookSeed extends Command
             'csm' => $this->seedCsm($csm, $ingest),
             'pluggedin' => $this->seedPluggedIn($pluggedin, $ingest),
             'nyt-history' => $this->seedNytHistory($nyt, $ingest),
+            'wkar' => $this->seedWkar($ingest),
+            'award' => $this->seedAward($ingest),
             default => $this->invalidSource(),
         };
     }
@@ -316,6 +323,137 @@ class BookSeed extends Command
         });
     }
 
+    /**
+     * WKAR ("What Kids Are Reading") import: structured JSON extracted by hand
+     * from the annual Renaissance report (no AR BookFinder scraping — see
+     * database/data/book_library/wkar/README.md for the shape and the
+     * extraction procedure). One list per report year (`list_key` = year);
+     * grade band rides in membership metadata and drives min_age with
+     * min_age_source='wkar' (provenance: csm_index outranks it).
+     */
+    private function seedWkar(IngestService $ingest): int
+    {
+        $limit = $this->limitOption();
+
+        return $this->runSeed('seed_wkar', 'wkar', function (SyncRun $run) use ($ingest, $limit) {
+            $entries = $this->loadImportFile();
+            $processed = 0;
+
+            foreach ($entries as $entry) {
+                if ($limit !== null && $processed >= $limit) {
+                    $run->complete(['exhausted' => false]);
+                    $this->warn('Stopped (--limit reached); re-run without --limit to finish (upserts are safe).');
+
+                    return self::SUCCESS;
+                }
+
+                $title = $entry['title'] ?? null;
+                $year = $entry['year'] ?? null;
+                if (! is_string($title) || trim($title) === '' || ! is_int($year)) {
+                    $this->warn('WKAR entry skipped (title and integer year are required): '.json_encode($entry));
+
+                    continue;
+                }
+                $processed++;
+
+                $gradeBand = $entry['grade_band'] ?? null;
+                $minAge = is_string($gradeBand) ? (self::WKAR_GRADE_BAND_MIN_AGE[$gradeBand] ?? null) : null;
+
+                $ingest->ingest([
+                    'title' => $title,
+                    'author' => $entry['author'] ?? null,
+                    'min_age' => $minAge,
+                    'min_age_source' => $minAge === null ? null : 'wkar',
+                    'list_source' => 'wkar',
+                    'list_key' => (string) $year,
+                    'rank' => $entry['rank'] ?? null,
+                    'metadata' => $gradeBand !== null ? ['grade_band' => $gradeBand] : null,
+                ], $run);
+            }
+
+            $run->complete(['exhausted' => true]);
+            $this->info("WKAR import finished: {$processed} entries.");
+
+            return self::SUCCESS;
+        });
+    }
+
+    /**
+     * Award canon import (Newbery/Caldecott/Printz winners + honors authored
+     * from ALA primary sources into database/data/book_library/awards/).
+     * `list_key` = the file's slug, so one membership per (title, award);
+     * year + winner|honor ride in membership metadata.
+     */
+    private function seedAward(IngestService $ingest): int
+    {
+        $limit = $this->limitOption();
+
+        return $this->runSeed('seed_award', 'award', function (SyncRun $run) use ($ingest, $limit) {
+            $slug = pathinfo((string) $this->option('file'), PATHINFO_FILENAME);
+            $entries = $this->loadImportFile();
+            $processed = 0;
+
+            foreach ($entries as $entry) {
+                if ($limit !== null && $processed >= $limit) {
+                    $run->complete(['exhausted' => false]);
+                    $this->warn('Stopped (--limit reached); re-run without --limit to finish (upserts are safe).');
+
+                    return self::SUCCESS;
+                }
+
+                $title = $entry['title'] ?? null;
+                $year = $entry['year'] ?? null;
+                $type = $entry['type'] ?? null;
+                if (! is_string($title) || trim($title) === '' || ! is_int($year) || ! in_array($type, ['winner', 'honor'], true)) {
+                    $this->warn('Award entry skipped (title, integer year, and type winner|honor are required): '.json_encode($entry));
+
+                    continue;
+                }
+                $processed++;
+
+                $ingest->ingest([
+                    'title' => $title,
+                    'author' => $entry['author'] ?? null,
+                    'list_source' => 'award',
+                    'list_key' => $slug,
+                    'metadata' => ['year' => $year, 'type' => $type],
+                ], $run);
+            }
+
+            $run->complete(['exhausted' => true]);
+            $this->info("Award import ({$slug}) finished: {$processed} entries.");
+
+            return self::SUCCESS;
+        });
+    }
+
+    /**
+     * Resolve --file (as given, or relative to base_path) and decode its JSON
+     * array. Throws into runSeed's catch — a missing/garbled import file must
+     * fail the run before any ingest happens.
+     *
+     * @return array<int, mixed>
+     */
+    private function loadImportFile(): array
+    {
+        $file = $this->option('file');
+        if (! is_string($file) || $file === '') {
+            throw new \RuntimeException('--file is required for this source');
+        }
+
+        $path = file_exists($file) ? $file : base_path($file);
+        if (! is_file($path)) {
+            throw new \RuntimeException("import file not found: {$file}");
+        }
+
+        $entries = json_decode((string) file_get_contents($path), true);
+        if (! is_array($entries) || ($entries !== [] && ! array_is_list($entries))) {
+            throw new \RuntimeException("import file is not a JSON array: {$file}");
+        }
+
+        return $entries;
+    }
+
     /** @return array{0: ?string, 1: ?string} [list, date] from the persisted `{list}|{date}` cursor */
     private function nytResumePoint(): array
     {
@@ -343,7 +481,7 @@ class BookSeed extends Command
 
     private function invalidSource(): int
     {
-        $this->error('Unknown --source. Available: csm, pluggedin, nyt-history.');
+        $this->error('Unknown --source. Available: csm, pluggedin, nyt-history, wkar, award.');
 
         return self::INVALID;
     }
