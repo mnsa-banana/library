@@ -33,6 +33,14 @@ class IngestServiceTest extends TestCase
 
     // ── Create + membership ───────────────────────────────────────────────
 
+    public function test_ingest_rejects_items_missing_list_source_or_list_key(): void
+    {
+        $run = SyncRun::start('weekly');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->service()->ingest(['title' => 'Frindle'], $run);
+    }
+
     public function test_ingest_creates_title_and_membership_and_bumps_titles(): void
     {
         $run = SyncRun::start('seed_nyt_history');
