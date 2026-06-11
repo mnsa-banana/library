@@ -2,6 +2,7 @@
 
 namespace App\Services\BookLibrary;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -14,10 +15,16 @@ use RuntimeException;
  * 5 req/min + ~500/day, so the constructor-injected delay (default 12s,
  * 0 in tests) sleeps BETWEEN calls; a 429 raises NytRateLimitedException
  * so callers can stop their run cleanly instead of burning the quota.
+ * Transient failures (5xx/connection) are retried with exponential backoff,
+ * mirroring OpenLibraryClient — tests pass backoffBaseMs: 0 so retries
+ * never sleep. A 429 is deliberately NOT retried: it means the day's quota
+ * is gone, and the budget contract is to stop on it.
  */
 class NytClient
 {
     private const BASE = 'https://api.nytimes.com/svc/books/v3';
+
+    private const MAX_RETRIES = 3;
 
     /** Current children's list slugs synced by book:weekly. */
     public const CURRENT_LISTS = [
@@ -40,7 +47,10 @@ class NytClient
 
     private bool $hasCalled = false;
 
-    public function __construct(private int $delayMs = 12_000) {}
+    public function __construct(
+        private int $delayMs = 12_000,
+        private int $backoffBaseMs = 1000,
+    ) {}
 
     /**
      * Per-list date bounds from /lists/names.json — each list's history depth
@@ -128,22 +138,61 @@ class NytClient
 
     private function get(string $url): Response
     {
-        if ($this->hasCalled && $this->delayMs > 0) {
-            usleep($this->delayMs * 1000);
-        }
-        $this->hasCalled = true;
+        for ($attempt = 0; $attempt < self::MAX_RETRIES; $attempt++) {
+            if ($this->hasCalled && $this->delayMs > 0) {
+                usleep($this->delayMs * 1000);
+            }
+            $this->hasCalled = true;
 
-        $response = Http::timeout(30)->get($url, [
-            'api-key' => (string) config('services.nyt.books_key'),
-        ]);
+            try {
+                $response = Http::timeout(30)->get($url, [
+                    'api-key' => (string) config('services.nyt.books_key'),
+                ]);
+            } catch (ConnectionException $e) {
+                // Transport-level failure (DNS, connect, or read timeout):
+                // treat as transient and retry rather than aborting the run.
+                if ($attempt === self::MAX_RETRIES - 1) {
+                    throw new RuntimeException(
+                        "NYT connection failed on {$url} after retries: {$e->getMessage()}",
+                        previous: $e,
+                    );
+                }
+                $this->backoff($attempt);
 
-        if ($response->status() === 429) {
-            throw new NytRateLimitedException("NYT rate limited (429) on {$url}");
-        }
-        if (! $response->successful()) {
+                continue;
+            }
+
+            // 429 means the day's quota is gone — never retried (the budget
+            // contract: callers stop their run cleanly on this exception).
+            if ($response->status() === 429) {
+                throw new NytRateLimitedException("NYT rate limited (429) on {$url}");
+            }
+            if ($response->successful()) {
+                return $response;
+            }
+
+            // Retry transient upstream errors; other 4xx fail fast below.
+            if ($response->status() >= 500) {
+                if ($attempt === self::MAX_RETRIES - 1) {
+                    throw new RuntimeException(
+                        "NYT request failed ({$response->status()}) on {$url}"
+                    );
+                }
+                $this->backoff($attempt);
+
+                continue;
+            }
+
             throw new RuntimeException("NYT request failed ({$response->status()}) on {$url}");
         }
 
-        return $response;
+        throw new RuntimeException("NYT request failed after retries on {$url}");
+    }
+
+    private function backoff(int $attempt): void
+    {
+        if ($this->backoffBaseMs > 0) {
+            usleep($this->backoffBaseMs * (2 ** $attempt) * 1000); // 1s, 2s
+        }
     }
 }

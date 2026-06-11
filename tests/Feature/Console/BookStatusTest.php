@@ -79,6 +79,37 @@ class BookStatusTest extends TestCase
         $this->assertSame(5, substr_count($output, ' enrich '));
     }
 
+    public function test_status_marks_runs_that_stopped_early_with_exhausted_false(): void
+    {
+        // A rate-limited/budget-stopped run completes with exhausted=false —
+        // without a marker it reads as a plain finished run.
+        $stopped = BookSyncLog::create([
+            'sync_type' => 'seed_csm',
+            'status' => 'completed',
+            'started_at' => now()->subHour(),
+            'metadata' => ['exhausted' => false],
+        ]);
+        $finished = BookSyncLog::create([
+            'sync_type' => 'enrich',
+            'status' => 'completed',
+            'started_at' => now(),
+        ]);
+
+        Artisan::call('book:status');
+        $output = Artisan::output();
+
+        $marker = 'stopped early (rate limit/budget), rerun to continue';
+        $this->assertSame(1, substr_count($output, $marker));
+        $this->assertMatchesRegularExpression(
+            '/#'.$stopped->id.' seed_csm .*'.preg_quote($marker, '/').'/',
+            $output,
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/#'.$finished->id.' enrich .*stopped early/',
+            $output,
+        );
+    }
+
     public function test_status_with_an_empty_library_reports_zero_without_crashing(): void
     {
         $this->artisan('book:status')

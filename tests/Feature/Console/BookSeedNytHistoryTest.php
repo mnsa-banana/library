@@ -21,7 +21,7 @@ class BookSeedNytHistoryTest extends TestCase
         parent::setUp();
         Http::preventStrayRequests();
         // Throttle injected to 0 — the suite must never sleep 12s between calls.
-        $this->app->instance(NytClient::class, new NytClient(delayMs: 0));
+        $this->app->instance(NytClient::class, new NytClient(delayMs: 0, backoffBaseMs: 0));
         config(['services.nyt.books_key' => 'test-key']);
     }
 

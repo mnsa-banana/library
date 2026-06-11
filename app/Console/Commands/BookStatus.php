@@ -61,6 +61,11 @@ class BookStatus extends Command
                 if ($log->error_message !== null) {
                     $line .= " error={$log->error_message}";
                 }
+                // A rate-limited/budget-stopped run completes "successfully"
+                // with exhausted=false — operators need to see it's unfinished.
+                if (($log->metadata['exhausted'] ?? null) === false) {
+                    $line .= ' — stopped early (rate limit/budget), rerun to continue';
+                }
                 $this->line($line);
             });
 

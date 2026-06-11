@@ -10,6 +10,8 @@ use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use App\Services\BookLibrary\PluggedInIndexScraper;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Console\Command;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Book-library seed entry point. Each `--source` is an independent arm with
@@ -100,6 +102,7 @@ class BookSeed extends Command
             }
 
             $processed = 0;
+            $lastProcessed = null;
             foreach ($urls as $url) {
                 if ($cursor !== null && $url <= $cursor) {
                     continue;
@@ -133,7 +136,19 @@ class BookSeed extends Command
                             'review_url' => $url,
                         ], $run);
                     } catch (OpenLibraryRateLimitedException) {
-                        return $this->stopOnOpenLibraryRateLimit($run, $url);
+                        return $this->stopOnOpenLibraryRateLimit($run, $url, $lastProcessed);
+                    } catch (QueryException $e) {
+                        // A poison row (bad scraped data the DB rejects) is
+                        // skipped like a parse miss — the cursor still
+                        // advances below, so --resume cannot wedge on this
+                        // URL forever. Safe even for a persistent DB outage:
+                        // the subsequent $run->cursor() save throws OUTSIDE
+                        // this catch and fails the run fast.
+                        Log::warning('book-library: csm ingest skipped (query exception)', [
+                            'url' => $url,
+                            'message' => $e->getMessage(),
+                        ]);
+                        $this->warn("CSM review page skipped (query exception): {$url}");
                     }
                 }
 
@@ -141,6 +156,7 @@ class BookSeed extends Command
                 // pages advance it too — --resume must not re-grind a
                 // permanently broken page.
                 $run->cursor($url);
+                $lastProcessed = $url;
             }
 
             $run->complete(['exhausted' => true]);
@@ -178,6 +194,7 @@ class BookSeed extends Command
             }
 
             $processed = 0;
+            $lastProcessed = null;
             foreach ($urls as $url) {
                 if ($cursor !== null && $url <= $cursor) {
                     continue;
@@ -210,7 +227,19 @@ class BookSeed extends Command
                             'review_url' => $url,
                         ], $run);
                     } catch (OpenLibraryRateLimitedException) {
-                        return $this->stopOnOpenLibraryRateLimit($run, $url);
+                        return $this->stopOnOpenLibraryRateLimit($run, $url, $lastProcessed);
+                    } catch (QueryException $e) {
+                        // A poison row (bad scraped data the DB rejects) is
+                        // skipped like a parse miss — the cursor still
+                        // advances below, so --resume cannot wedge on this
+                        // URL forever. Safe even for a persistent DB outage:
+                        // the subsequent $run->cursor() save throws OUTSIDE
+                        // this catch and fails the run fast.
+                        Log::warning('book-library: pluggedin ingest skipped (query exception)', [
+                            'url' => $url,
+                            'message' => $e->getMessage(),
+                        ]);
+                        $this->warn("Plugged In review page skipped (query exception): {$url}");
                     }
                 }
 
@@ -218,6 +247,7 @@ class BookSeed extends Command
                 // pages advance it too — --resume must not re-grind a
                 // permanently broken page.
                 $run->cursor($url);
+                $lastProcessed = $url;
             }
 
             $run->complete(['exhausted' => true]);
@@ -501,9 +531,16 @@ class BookSeed extends Command
      * The rate-limited item's membership was never written and `--resume`
      * skips every URL ≤ cursor, so the cursor must stay at the last fully
      * processed URL — the current page is re-fetched next run.
+     *
+     * When the 429 hits BEFORE the run's first checkpoint ($lastProcessed is
+     * null), the cursor is set to the '' sentinel: it is non-null, so
+     * SyncRun::lastCursor cannot fall back to an OLDER run's cursor (which
+     * would make --resume silently no-op), and `$url <= ''` is false for
+     * every URL, so a resume starts from the beginning.
      */
-    private function stopOnOpenLibraryRateLimit(SyncRun $run, string $url): int
+    private function stopOnOpenLibraryRateLimit(SyncRun $run, string $url, ?string $lastProcessed): int
     {
+        $run->cursor($lastProcessed ?? '');
         $run->complete(['exhausted' => false]);
         $this->warn("Stopped (Open Library 429) before {$url}; cursor persisted — rerun with --resume.");
 

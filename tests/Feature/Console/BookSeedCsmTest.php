@@ -8,6 +8,8 @@ use App\Models\BookSyncLog;
 use App\Services\BookLibrary\CsmIndexScraper;
 use App\Services\BookLibrary\OpenLibraryClient;
 use App\Services\BookLibrary\SyncRun;
+use App\Services\BookLibrary\WorkResolver;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -306,6 +308,84 @@ class BookSeedCsmTest extends TestCase
         $this->assertFalse($log->metadata['exhausted']);
         $this->assertSame(self::BASE.'/book-reviews/a-wrinkle-in-time', $log->last_cursor);
         $this->assertSame(2, $log->api_calls_used);
+    }
+
+    public function test_query_exception_during_ingest_is_skipped_and_cursor_advances(): void
+    {
+        // A poison row (e.g. a >255-char title hitting the Postgres varchar
+        // limit) throws QueryException from inside ingest. The run must skip
+        // it and advance the cursor — otherwise --resume re-processes the
+        // same URL forever. WorkResolver is the real throw site
+        // (BookLibraryTitle::create), so the partial mock throws from there.
+        $resolver = \Mockery::mock(
+            WorkResolver::class,
+            [new OpenLibraryClient(backoffBaseMs: 0)]
+        )->makePartial();
+        $resolver->shouldReceive('resolve')
+            ->withArgs(fn (array $item) => ($item['title'] ?? null) === "Charlotte's Web")
+            ->andThrow(new QueryException(
+                'sqlite',
+                'insert into "book_library_titles" ...',
+                [],
+                new \RuntimeException('value too long for type character varying(255)'),
+            ));
+        $resolver->shouldReceive('resolve')->passthru();
+        $this->app->instance(WorkResolver::class, $resolver);
+
+        $this->fakeCsm();
+
+        $this->artisan('book:seed', ['--source' => 'csm'])->assertExitCode(0);
+
+        // The poison URL is skipped; the other two still land.
+        $this->assertSame(2, BookLibraryTitle::count());
+        $this->assertNull(BookLibraryTitle::where('title', "Charlotte's Web")->first());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('completed', $log->status);
+        $this->assertTrue($log->metadata['exhausted']);
+        $this->assertSame(2, $log->titles_processed);
+        // The cursor advanced past the poison URL — --resume must not wedge.
+        $this->assertSame(self::BASE.'/book-reviews/the-wild-robot', $log->last_cursor);
+    }
+
+    public function test_open_library_429_before_first_checkpoint_writes_sentinel_cursor_shielding_older_runs(): void
+    {
+        // Backoff injected to 0 — the OL client must not sleep between retries.
+        $this->app->instance(OpenLibraryClient::class, new OpenLibraryClient(backoffBaseMs: 0));
+
+        // An OLDER exhausted run left a late-alphabet cursor behind. If the
+        // new run's 429 stop persisted nothing, lastCursor() would fall back
+        // to it and --resume would silently no-op.
+        $prior = SyncRun::start('seed_csm');
+        $prior->cursor(self::BASE.'/book-reviews/zzz-last-book');
+        $prior->complete(['exhausted' => true]);
+
+        // OL rate-limits persistently on the FIRST item's ISBN (3 attempts =
+        // one exhausted retry loop), then recovers for the resume run.
+        $this->fakeCsm([
+            'openlibrary.org/isbn/9780312367541.json' => Http::sequence()
+                ->pushStatus(429)->pushStatus(429)->pushStatus(429)
+                ->whenEmpty(Http::response(['error' => 'notfound'], 404)),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'csm'])->assertExitCode(0);
+
+        $this->assertSame(0, BookLibraryTitle::count());
+
+        $log = BookSyncLog::orderByDesc('id')->first();
+        $this->assertSame('completed', $log->status);
+        $this->assertFalse($log->metadata['exhausted']);
+        // The '' sentinel: non-null (shields the older run's cursor from
+        // lastCursor) and <= every URL (resume starts from the beginning).
+        $this->assertSame('', $log->last_cursor);
+
+        // --resume must start from the first URL, not the older cursor.
+        $this->artisan('book:seed', ['--source' => 'csm', '--resume' => true])->assertExitCode(0);
+
+        $this->assertSame(3, BookLibraryTitle::count());
+        $resumeLog = BookSyncLog::orderByDesc('id')->first();
+        $this->assertTrue($resumeLog->metadata['exhausted']);
+        $this->assertSame(3, $resumeLog->titles_processed);
     }
 
     public function test_empty_walk_fails_run_instead_of_completing_exhausted(): void

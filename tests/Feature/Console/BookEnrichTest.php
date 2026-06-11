@@ -255,6 +255,40 @@ class BookEnrichTest extends TestCase
         $this->assertSame('gb-'.md5('Holes'), $row->google_books_id);
     }
 
+    public function test_enrich_fills_year_from_google_books_published_date(): void
+    {
+        BookLibraryTitle::create(['title' => 'Smile', 'author' => 'Raina Telgemeier']);
+
+        Http::fake([
+            'www.googleapis.com/*' => Http::response(
+                $this->gbVolume('Smile', 'PARTIAL', ['publishedDate' => '2010-02-01'])
+            ),
+        ]);
+
+        $this->artisan('book:enrich')->assertExitCode(0);
+
+        $this->assertSame(2010, BookLibraryTitle::sole()->year);
+    }
+
+    public function test_enrich_never_overwrites_an_existing_year(): void
+    {
+        BookLibraryTitle::create([
+            'title' => 'Smile',
+            'author' => 'Raina Telgemeier',
+            'year' => 1999,
+        ]);
+
+        Http::fake([
+            'www.googleapis.com/*' => Http::response(
+                $this->gbVolume('Smile', 'PARTIAL', ['publishedDate' => '2010-02-01'])
+            ),
+        ]);
+
+        $this->artisan('book:enrich')->assertExitCode(0);
+
+        $this->assertSame(1999, BookLibraryTitle::sole()->year);
+    }
+
     public function test_rows_with_all_enrichable_fields_set_are_stamped_without_any_lookup(): void
     {
         BookLibraryTitle::create([

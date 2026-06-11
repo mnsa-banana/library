@@ -26,6 +26,15 @@ class BookLibraryTitle extends Model
     {
         // Recompute on every save so later title/author edits stay in sync.
         static::saving(function (self $title) {
+            // Column limit: title/author are varchar(255) — scraper values are
+            // unbounded and Postgres rejects anything longer (sqlite tests
+            // don't enforce it). Clamp BEFORE normalizing; the normalizer
+            // never lengthens, so the normalized fields stay ≤255 too.
+            $title->title = mb_substr($title->title, 0, 255);
+            if ($title->author !== null) {
+                $title->author = mb_substr($title->author, 0, 255);
+            }
+
             $title->normalized_title = Normalizer::title($title->title);
             $title->normalized_author = Normalizer::author($title->author);
         });

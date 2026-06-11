@@ -75,7 +75,9 @@ entries persist lazily on the next cursor/complete/fail.
 - *csm / pluggedin seeds:* cursor = last **processed** URL within the sorted
   URL list — advanced on fetch/parse skips too, so `--resume` never re-grinds
   a permanently broken page. `--resume` skips every URL ≤ cursor (string order
-  matches the sorted walk).
+  matches the sorted walk). An OL 429 *before the first checkpoint* persists
+  the `''` sentinel cursor: non-null (shields older runs' cursors from
+  `lastCursor`) and ≤ every URL, so `--resume` starts from the beginning.
 - *nyt-history:* cursor = `{list}|{date}`. Walks each list from its
   `lists/names` newest date following `previous_published_date` — never date
   arithmetic — down to that list's oldest date. Resume re-fetches the cursor

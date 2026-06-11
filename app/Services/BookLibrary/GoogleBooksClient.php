@@ -45,7 +45,8 @@ class GoogleBooksClient
      *
      * @param  array<string>  $isbn13s  digits-only ISBN-13s
      * @return array{description: ?string, categories: ?array, page_count: ?int,
-     *               preview_available: ?bool, google_books_id: ?string, cover_url: ?string}|null
+     *               preview_available: ?bool, google_books_id: ?string, cover_url: ?string,
+     *               year: ?int}|null
      */
     public function lookup(array $isbn13s, string $title, ?string $author): ?array
     {
@@ -92,7 +93,8 @@ class GoogleBooksClient
 
     /**
      * @return array{description: ?string, categories: ?array, page_count: ?int,
-     *               preview_available: ?bool, google_books_id: ?string, cover_url: ?string}
+     *               preview_available: ?bool, google_books_id: ?string, cover_url: ?string,
+     *               year: ?int}
      */
     private function mapVolume(array $volume): array
     {
@@ -102,6 +104,13 @@ class GoogleBooksClient
         $categories = $info['categories'] ?? null;
         $pageCount = $info['pageCount'] ?? null;
         $id = $volume['id'] ?? null;
+
+        // publishedDate comes as "2004", "2004-05", or "2004-05-01" — the
+        // leading 4-digit year is the publication year.
+        $published = $info['publishedDate'] ?? null;
+        $year = is_string($published) && preg_match('/^(\d{4})/', $published, $m)
+            ? (int) $m[1]
+            : null;
 
         $cover = $info['imageLinks']['thumbnail'] ?? $info['imageLinks']['smallThumbnail'] ?? null;
         if (is_string($cover)) {
@@ -123,6 +132,7 @@ class GoogleBooksClient
             'preview_available' => $previewAvailable,
             'google_books_id' => is_string($id) && $id !== '' ? $id : null,
             'cover_url' => is_string($cover) && $cover !== '' ? $cover : null,
+            'year' => $year,
         ];
     }
 

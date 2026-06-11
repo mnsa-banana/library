@@ -117,6 +117,23 @@ class BookLibraryTitleTest extends TestCase
         $this->assertSame('madeleine lengle', $fresh->normalized_author);
     }
 
+    public function test_saving_clamps_title_and_author_to_the_255_column_limit(): void
+    {
+        // Scraper titles are unbounded; the columns are varchar(255). Postgres
+        // raises a QueryException past that (sqlite tests don't enforce it),
+        // so the model must clamp before save.
+        $title = BookLibraryTitle::factory()->create([
+            'title' => str_repeat('x', 300),
+            'author' => str_repeat('y', 300),
+        ]);
+
+        $fresh = $title->fresh();
+        $this->assertSame(255, strlen($fresh->title));
+        $this->assertSame(255, strlen($fresh->author));
+        $this->assertSame(255, strlen($fresh->normalized_title));
+        $this->assertSame(255, strlen($fresh->normalized_author));
+    }
+
     public function test_null_author_normalizes_to_null(): void
     {
         $title = BookLibraryTitle::factory()->create(['author' => null]);

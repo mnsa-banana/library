@@ -185,6 +185,7 @@ class BookEnrich extends Command
             $row->preview_available ??= $result['preview_available'];
             $row->google_books_id ??= $result['google_books_id'];
             $row->cover_url ??= $result['cover_url'];
+            $row->year ??= $result['year'];
         }
 
         return $calls;
