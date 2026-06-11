@@ -63,7 +63,7 @@ class PluggedInIndexScraper
                 continue;
             }
             foreach ($this->locs($this->fetchXml($childUrl), 'url') as $loc) {
-                if (preg_match('#/book-reviews/[^/]+#', $loc)) {
+                if (preg_match('~/book-reviews/[^/?#]+~', $loc)) {
                     $urls[] = $loc;
                 }
             }
@@ -156,6 +156,13 @@ class PluggedInIndexScraper
      * — so the author is the item immediately after the label. Pages
      * without the label (or with nothing after it) yield null; positional
      * guessing without the label would risk ingesting publisher/age text.
+     *
+     * Digit guard: when the author item is missing the next item is the age
+     * band ("8 to 12", "12 years old and up") or a year — no real author
+     * starts with a digit, so digit-leading candidates yield null. A wrong
+     * author here would survive normalization and poison work resolution
+     * (Plugged In has no ISBN to rescue dedup); a null author back-fills
+     * correctly via the resolver's null-author path.
      */
     private function bylineAuthor(string $html): ?string
     {
@@ -174,7 +181,7 @@ class PluggedInIndexScraper
             if (strcasecmp($text, 'Book Review') === 0) {
                 $author = $items[$i + 1] ?? '';
 
-                return $author === '' ? null : $author;
+                return $author === '' || preg_match('/^\d/', $author) ? null : $author;
             }
         }
 

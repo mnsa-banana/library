@@ -146,6 +146,70 @@ class BookSeedPluggedInTest extends TestCase
         ], $meta);
     }
 
+    public function test_review_page_meta_rejects_age_band_when_author_item_is_missing(): void
+    {
+        // "Book Review" label followed directly by the age band — no author
+        // item. The positional heuristic must NOT ingest "8 to 12" as the
+        // author: a digit-leading author would survive normalization
+        // ("8 to 12" → last name "12") and poison work resolution with a
+        // permanent duplicate row, so it must come back null instead.
+        Http::fake([
+            self::BASE.'/book-reviews/authorless/' => Http::response(
+                '<!DOCTYPE html><html><head></head><body>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Book Review</span>'
+                .'<h1 class="elementor-heading-title elementor-size-default">Authorless Book</h1>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">8 to 12</span>'
+                .'</body></html>'
+            ),
+        ]);
+
+        $meta = (new PluggedInIndexScraper(delayMs: 0))->reviewPageMeta(self::BASE.'/book-reviews/authorless/');
+
+        $this->assertSame([
+            'title' => 'Authorless Book',
+            'author' => null,
+        ], $meta);
+    }
+
+    public function test_seed_stores_null_author_when_byline_carries_only_age_band(): void
+    {
+        $this->fakePluggedIn([
+            self::BASE.'/book-reviews/bravely/' => Http::response(
+                '<!DOCTYPE html><html><head></head><body>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Book Review</span>'
+                .'<h1 class="elementor-heading-title elementor-size-default">Bravely</h1>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">8 to 12</span>'
+                .'</body></html>'
+            ),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'pluggedin'])->assertExitCode(0);
+
+        // The row still seeds — with a null author, never the age band.
+        $bravely = BookLibraryTitle::where('title', 'Bravely')->sole();
+        $this->assertNull($bravely->author);
+    }
+
+    public function test_review_page_meta_returns_null_author_when_nothing_follows_the_label(): void
+    {
+        // Label present but it's the LAST type-custom item — nothing after it.
+        Http::fake([
+            self::BASE.'/book-reviews/label-only/' => Http::response(
+                '<!DOCTYPE html><html><head></head><body>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Book Review</span>'
+                .'<h1 class="elementor-heading-title elementor-size-default">Label Only</h1>'
+                .'</body></html>'
+            ),
+        ]);
+
+        $meta = (new PluggedInIndexScraper(delayMs: 0))->reviewPageMeta(self::BASE.'/book-reviews/label-only/');
+
+        $this->assertSame([
+            'title' => 'Label Only',
+            'author' => null,
+        ], $meta);
+    }
+
     public function test_review_page_meta_returns_null_on_non_200_and_on_title_less_pages(): void
     {
         Http::fake([
