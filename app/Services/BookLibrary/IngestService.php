@@ -4,6 +4,7 @@ namespace App\Services\BookLibrary;
 
 use App\Models\BookLibraryTitle;
 use App\Models\BookListMembership;
+use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 
 /**
@@ -46,20 +47,35 @@ final class IngestService
 
         $this->applyMinAge($title, $item);
 
-        BookListMembership::updateOrCreate(
-            [
-                'library_title_id' => $title->id,
-                'list_source' => $listSource,
-                'list_key' => $listKey,
-            ],
-            [
+        $membership = BookListMembership::firstOrNew([
+            'library_title_id' => $title->id,
+            'list_source' => $listSource,
+            'list_key' => $listKey,
+        ]);
+
+        // Newest data wins regardless of ingest order: the NYT history
+        // backfill is forced to walk each list newest→oldest (the API only
+        // exposes previous_published_date), so a title charting multiple
+        // weeks is re-ingested with progressively OLDER stats — blindly
+        // upserting would leave every multi-week title with its debut rank /
+        // weeks_on_list / as_of_date. Skip the overwrite only when both sides
+        // carry an as_of_date and the incoming one is strictly older;
+        // null-dated sources (csm/pluggedin/wkar/award) and re-seeds always
+        // update (re-seeds must refresh review_url/metadata).
+        $incomingAsOf = $item['as_of_date'] ?? null;
+        $staleIngest = $incomingAsOf !== null
+            && $membership->as_of_date !== null
+            && Carbon::parse($incomingAsOf)->lt($membership->as_of_date);
+
+        if (! $staleIngest) {
+            $membership->fill([
                 'rank' => $item['rank'] ?? null,
                 'weeks_on_list' => $item['weeks_on_list'] ?? null,
-                'as_of_date' => $item['as_of_date'] ?? null,
+                'as_of_date' => $incomingAsOf,
                 'review_url' => $item['review_url'] ?? null,
                 'metadata' => $item['metadata'] ?? null,
-            ]
-        );
+            ])->save();
+        }
 
         $run->bumpTitles();
 

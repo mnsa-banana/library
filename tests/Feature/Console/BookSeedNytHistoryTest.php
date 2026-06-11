@@ -102,6 +102,43 @@ class BookSeedNytHistoryTest extends TestCase
         $this->assertSame('chapter-books|2014-06-08', $log->last_cursor);
     }
 
+    public function test_backfill_keeps_newest_week_stats_for_titles_charting_multiple_weeks(): void
+    {
+        // Same work (same ISBN) charts in both picture-books weeks. The walk
+        // is forced newest→oldest by previous_published_date, so without a
+        // newest-wins guard the older week would overwrite the membership
+        // with debut-era stats (weeks_on_list 10, rank 9, older as_of_date).
+        $bigJim = fn (int $rank, int $weeks) => [
+            'rank' => $rank,
+            'weeks_on_list' => $weeks,
+            'primary_isbn13' => '9781338846621',
+            'title' => 'BIG JIM BEGINS',
+            'author' => 'Dav Pilkey',
+            'isbns' => [['isbn13' => '9781338846621']],
+        ];
+
+        $this->fakeHistory([
+            'api.nytimes.com/svc/books/v3/lists/2025-01-15/picture-books.json*' => Http::response(['results' => [
+                'published_date' => '2025-01-15',
+                'previous_published_date' => '2025-01-03',
+                'books' => [$bigJim(3, 12)],
+            ]]),
+            'api.nytimes.com/svc/books/v3/lists/2025-01-03/picture-books.json*' => Http::response(['results' => [
+                'published_date' => '2025-01-03',
+                'previous_published_date' => '2024-11-20',
+                'books' => [$bigJim(9, 10)],
+            ]]),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'nyt-history'])->assertExitCode(0);
+
+        $title = BookLibraryTitle::where('title', 'Big Jim Begins')->sole();
+        $membership = $title->memberships()->sole();
+        $this->assertSame(3, $membership->rank);
+        $this->assertSame(12, $membership->weeks_on_list);
+        $this->assertSame('2025-01-15', $membership->as_of_date->toDateString());
+    }
+
     public function test_limit_stops_after_n_pages_with_cursor_for_the_next_unfetched_page(): void
     {
         $this->fakeHistory();

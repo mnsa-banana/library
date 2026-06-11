@@ -6,6 +6,7 @@ use App\Models\BookLibraryTitle;
 use App\Models\BookListMembership;
 use App\Models\BookSyncLog;
 use App\Services\BookLibrary\CsmIndexScraper;
+use App\Services\BookLibrary\OpenLibraryClient;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -278,6 +279,33 @@ class BookSeedCsmTest extends TestCase
         $this->assertSame(2, $log->titles_processed);
         // Skipped pages advance the cursor, exactly like the non-200 path.
         $this->assertSame(self::BASE.'/book-reviews/the-wild-robot', $log->last_cursor);
+    }
+
+    public function test_persistent_open_library_429_stops_run_cleanly_with_cursor_at_last_processed_url(): void
+    {
+        // Backoff injected to 0 — the OL client must not sleep between retries.
+        $this->app->instance(OpenLibraryClient::class, new OpenLibraryClient(backoffBaseMs: 0));
+
+        // Page 1 (a-wrinkle-in-time) ingests fine (its OL lookup 404s via the
+        // default fake); page 2's OL resolution rate-limits persistently —
+        // same contract as an NYT 429: cursor persisted, completed with
+        // exhausted=false, exit 0 (NOT a failed run / exit 1).
+        $this->fakeCsm([
+            'openlibrary.org/isbn/9780060263850.json' => Http::response(['error' => 'rate limited'], 429),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'csm'])->assertExitCode(0);
+
+        // Page-1 work is kept; the rate-limited item's membership was never
+        // written, so the cursor must stay at the last fully processed URL —
+        // --resume re-fetches charlottes-web instead of skipping past it.
+        $this->assertSame(1, BookLibraryTitle::count());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('completed', $log->status);
+        $this->assertFalse($log->metadata['exhausted']);
+        $this->assertSame(self::BASE.'/book-reviews/a-wrinkle-in-time', $log->last_cursor);
+        $this->assertSame(2, $log->api_calls_used);
     }
 
     public function test_empty_walk_fails_run_instead_of_completing_exhausted(): void

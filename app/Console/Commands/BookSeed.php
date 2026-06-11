@@ -6,6 +6,7 @@ use App\Services\BookLibrary\CsmIndexScraper;
 use App\Services\BookLibrary\IngestService;
 use App\Services\BookLibrary\NytClient;
 use App\Services\BookLibrary\NytRateLimitedException;
+use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use App\Services\BookLibrary\PluggedInIndexScraper;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Console\Command;
@@ -120,16 +121,20 @@ class BookSeed extends Command
                     // Already logged with detail by the scraper.
                     $this->warn("CSM review page skipped (fetch/parse miss): {$url}");
                 } else {
-                    $ingest->ingest([
-                        'title' => $meta['title'],
-                        'author' => $meta['author'],
-                        'isbn13s' => $meta['isbn13s'],
-                        'min_age' => $meta['min_age'],
-                        'min_age_source' => $meta['min_age'] === null ? null : 'csm_index',
-                        'list_source' => 'csm_index',
-                        'list_key' => 'index',
-                        'review_url' => $url,
-                    ], $run);
+                    try {
+                        $ingest->ingest([
+                            'title' => $meta['title'],
+                            'author' => $meta['author'],
+                            'isbn13s' => $meta['isbn13s'],
+                            'min_age' => $meta['min_age'],
+                            'min_age_source' => $meta['min_age'] === null ? null : 'csm_index',
+                            'list_source' => 'csm_index',
+                            'list_key' => 'index',
+                            'review_url' => $url,
+                        ], $run);
+                    } catch (OpenLibraryRateLimitedException) {
+                        return $this->stopOnOpenLibraryRateLimit($run, $url);
+                    }
                 }
 
                 // Resume-safety checkpoint: persists immediately. Skipped
@@ -196,13 +201,17 @@ class BookSeed extends Command
                 } else {
                     // Title/author/list fields only — Plugged In exposes no
                     // ISBN and no machine-readable age (spec: no min_age).
-                    $ingest->ingest([
-                        'title' => $meta['title'],
-                        'author' => $meta['author'],
-                        'list_source' => 'pluggedin_index',
-                        'list_key' => 'index',
-                        'review_url' => $url,
-                    ], $run);
+                    try {
+                        $ingest->ingest([
+                            'title' => $meta['title'],
+                            'author' => $meta['author'],
+                            'list_source' => 'pluggedin_index',
+                            'list_key' => 'index',
+                            'review_url' => $url,
+                        ], $run);
+                    } catch (OpenLibraryRateLimitedException) {
+                        return $this->stopOnOpenLibraryRateLimit($run, $url);
+                    }
                 }
 
                 // Resume-safety checkpoint: persists immediately. Skipped
@@ -297,12 +306,19 @@ class BookSeed extends Command
                     $pages++;
 
                     $asOfDate = $results['published_date'] ?? $date;
-                    foreach ($results['books'] ?? [] as $book) {
-                        $item = NytClient::ingestItem($book, $list, $asOfDate);
-                        if ($item['title'] === '') {
-                            continue;
+                    try {
+                        foreach ($results['books'] ?? [] as $book) {
+                            $item = NytClient::ingestItem($book, $list, $asOfDate);
+                            if ($item['title'] === '') {
+                                continue;
+                            }
+                            $ingest->ingest($item, $run);
                         }
-                        $ingest->ingest($item, $run);
+                    } catch (OpenLibraryRateLimitedException) {
+                        // Cursor at the current page: --resume re-fetches it,
+                        // so the partially ingested page is re-processed
+                        // (memberships upsert — harmless).
+                        return $this->stopNytRun($run, "{$list}|{$date}", 'Open Library 429');
                     }
 
                     // Resume-safety checkpoint after every page; re-fetching
@@ -475,6 +491,21 @@ class BookSeed extends Command
         $run->cursor($cursor);
         $run->complete(['exhausted' => false]);
         $this->warn("Stopped ({$reason}); cursor {$cursor} persisted — rerun with --resume.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Clean stop for an Open Library 429 inside a scraper arm's ingest
+     * (compass §rate limits: typed rate-limit exceptions never fail a run).
+     * The rate-limited item's membership was never written and `--resume`
+     * skips every URL ≤ cursor, so the cursor must stay at the last fully
+     * processed URL — the current page is re-fetched next run.
+     */
+    private function stopOnOpenLibraryRateLimit(SyncRun $run, string $url): int
+    {
+        $run->complete(['exhausted' => false]);
+        $this->warn("Stopped (Open Library 429) before {$url}; cursor persisted — rerun with --resume.");
 
         return self::SUCCESS;
     }

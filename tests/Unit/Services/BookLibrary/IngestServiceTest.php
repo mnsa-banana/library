@@ -118,6 +118,73 @@ class IngestServiceTest extends TestCase
         $this->assertSame(2, BookSyncLog::sole()->titles_processed);
     }
 
+    public function test_older_dated_ingest_does_not_clobber_newer_dated_membership(): void
+    {
+        // The NYT history backfill walks newest→oldest, so the second ingest
+        // for a multi-week title carries OLDER stats — they must be dropped.
+        $run = SyncRun::start('seed_nyt_history');
+        $service = $this->service();
+
+        $service->ingest([
+            'title' => 'Holes',
+            'author' => 'Louis Sachar',
+            'list_source' => 'nyt',
+            'list_key' => 'young-adult',
+            'rank' => 3,
+            'weeks_on_list' => 12,
+            'as_of_date' => '2025-01-15',
+            'review_url' => 'https://example.com/newer',
+            'metadata' => ['publisher' => 'Newer House'],
+        ], $run);
+
+        $service->ingest([
+            'title' => 'Holes',
+            'author' => 'Louis Sachar',
+            'list_source' => 'nyt',
+            'list_key' => 'young-adult',
+            'rank' => 9,
+            'weeks_on_list' => 10,
+            'as_of_date' => '2025-01-03',
+            'review_url' => 'https://example.com/older',
+            'metadata' => ['publisher' => 'Older House'],
+        ], $run);
+
+        $membership = BookListMembership::sole();
+        $this->assertSame(3, $membership->rank);
+        $this->assertSame(12, $membership->weeks_on_list);
+        $this->assertSame('2025-01-15', $membership->as_of_date->toDateString());
+        $this->assertSame('https://example.com/newer', $membership->review_url);
+        $this->assertSame(['publisher' => 'Newer House'], $membership->metadata);
+    }
+
+    public function test_same_source_null_dated_reingest_still_updates_membership(): void
+    {
+        // csm/pluggedin/wkar/award memberships never carry as_of_date; a
+        // re-seed (both sides null) must still refresh review_url/metadata.
+        $run = SyncRun::start('seed_csm');
+        $service = $this->service();
+
+        $service->ingest([
+            'title' => 'Holes',
+            'author' => 'Louis Sachar',
+            'list_source' => 'csm_index',
+            'list_key' => 'index',
+            'review_url' => 'https://example.com/old-review',
+        ], $run);
+
+        $service->ingest([
+            'title' => 'Holes',
+            'author' => 'Louis Sachar',
+            'list_source' => 'csm_index',
+            'list_key' => 'index',
+            'review_url' => 'https://example.com/new-review',
+        ], $run);
+
+        $membership = BookListMembership::sole();
+        $this->assertNull($membership->as_of_date);
+        $this->assertSame('https://example.com/new-review', $membership->review_url);
+    }
+
     public function test_distinct_list_keys_create_separate_memberships_for_same_title(): void
     {
         $run = SyncRun::start('seed_nyt_history');

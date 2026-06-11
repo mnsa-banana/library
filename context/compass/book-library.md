@@ -3,8 +3,10 @@
 
 A parent-side catalog of children's/YA books aggregated from curated list
 sources (bestseller lists, review indexes, reading reports, award canons).
-Standalone in v1 — no link to `reports`; the admin-side acquisition flow that
-consumes this catalog is a follow-up PRD.
+Standalone in v1 — no link to `reports`; the admin-side interactive
+acquisition flow that consumes this catalog (candidate picker, manual confirm)
+ships with this feature — only batch analysis + bulk actions are a follow-up
+PRD.
 
 ## Quick Commands
 - Weekly NYT sync (scheduled): `php artisan book:weekly`
@@ -30,8 +32,10 @@ consumes this catalog is a follow-up PRD.
 ## Non-Obvious Patterns
 **Three tables, no FK to reports.** `book_library_titles` is one row per *work*
 (not edition); `book_list_memberships` is unique per
-(library_title_id, list_source, list_key) and upserts, so every seed re-run is
-safe; `book_sync_log` mirrors `streaming_sync_log` (status, api_calls_used,
+(library_title_id, list_source, list_key) and upserts newest-wins — a dated
+overwrite is skipped when its `as_of_date` is strictly older than the stored
+one (the NYT backfill walks newest→oldest), null-dated upserts always apply —
+so every seed re-run is safe; `book_sync_log` mirrors `streaming_sync_log` (status, api_calls_used,
 titles_processed, last_cursor, metadata). `isbn13s` is jsonb with a GIN
 containment index — pgsql only, sqlite test runs skip it.
 
@@ -82,6 +86,10 @@ entries persist lazily on the next cursor/complete/fail.
   re-processes stamped rows, still fill-null. Ids are snapshotted up front
   because processing mutates the very column the selection filters on.
 - *wkar / award:* local-file imports, no cursor — re-runs upsert.
+
+`--resume` footgun: after a run that completed `exhausted=true`, `--resume`
+skips everything ≤ the final cursor — a refresh pass must be a fresh full run
+(upserts make it safe).
 
 **Rate limits stop runs cleanly; `exhausted` is the retry signal.** Each
 client raises its typed exception (`NytRateLimitedException`,

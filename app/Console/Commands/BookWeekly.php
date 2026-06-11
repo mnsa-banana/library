@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Services\BookLibrary\IngestService;
 use App\Services\BookLibrary\NytClient;
 use App\Services\BookLibrary\NytRateLimitedException;
+use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Console\Command;
 
@@ -42,12 +43,23 @@ class BookWeekly extends Command
                 $run->bumpApiCalls();
 
                 $asOfDate = $results['published_date'] ?? null;
-                foreach ($results['books'] ?? [] as $book) {
-                    $item = NytClient::ingestItem($book, $list, $asOfDate);
-                    if ($item['title'] === '') {
-                        continue;
+                try {
+                    foreach ($results['books'] ?? [] as $book) {
+                        $item = NytClient::ingestItem($book, $list, $asOfDate);
+                        if ($item['title'] === '') {
+                            continue;
+                        }
+                        $ingest->ingest($item, $run);
                     }
-                    $ingest->ingest($item, $run);
+                } catch (OpenLibraryRateLimitedException) {
+                    // Same contract as the NYT 429 above: a typed rate limit
+                    // never fails the run. The partially synced list is
+                    // re-synced in full next run (memberships upsert).
+                    $run->cursor("{$list}|current");
+                    $run->complete(['exhausted' => false]);
+                    $this->warn("Open Library rate limited during {$list}; stopping — remaining lists sync next run.");
+
+                    return self::SUCCESS;
                 }
                 $this->info("Synced {$list} ({$asOfDate}).");
             }
