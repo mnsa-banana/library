@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\BookLibrary\CsmIndexScraper;
 use App\Services\BookLibrary\IngestService;
 use App\Services\BookLibrary\NytClient;
 use App\Services\BookLibrary\NytRateLimitedException;
@@ -11,7 +12,7 @@ use Illuminate\Console\Command;
 /**
  * Book-library seed entry point. Each `--source` is an independent arm with
  * its own sync_type, cursor format, and resume semantics; further arms
- * (csm, pluggedin, wkar, award) land with later tasks.
+ * (pluggedin, wkar, award) land with later tasks.
  */
 class BookSeed extends Command
 {
@@ -19,18 +20,118 @@ class BookSeed extends Command
     private const NYT_MAX_CALLS_PER_RUN = 450;
 
     protected $signature = 'book:seed
-        {--source= : Seed source (nyt-history)}
-        {--limit= : Maximum list pages to fetch this run}
+        {--source= : Seed source (csm|nyt-history)}
+        {--limit= : Maximum pages to fetch this run}
         {--resume : Continue from the last persisted cursor for this source}';
 
     protected $description = 'Seed the book library from a list source';
 
-    public function handle(NytClient $nyt, IngestService $ingest): int
+    public function handle(NytClient $nyt, CsmIndexScraper $csm, IngestService $ingest): int
     {
         return match ($this->option('source')) {
+            'csm' => $this->seedCsm($csm, $ingest),
             'nyt-history' => $this->seedNytHistory($nyt, $ingest),
             default => $this->invalidSource(),
         };
+    }
+
+    /**
+     * Shared per-arm run boilerplate: start the sync-log row, delegate to the
+     * arm body, and convert any uncaught throwable into a failed run +
+     * FAILURE exit. Key checks and resume parsing stay arm-local (they may
+     * need to fail a run before any body work starts).
+     */
+    private function runSeed(string $syncType, string $label, \Closure $body): int
+    {
+        $run = SyncRun::start($syncType);
+
+        try {
+            return $body($run);
+        } catch (\Throwable $e) {
+            $run->fail($e->getMessage());
+            $this->error("book:seed {$label} failed: {$e->getMessage()}");
+
+            return self::FAILURE;
+        }
+    }
+
+    /** Normalized --limit: null when absent, never negative. */
+    private function limitOption(): ?int
+    {
+        return $this->option('limit') !== null ? max(0, (int) $this->option('limit')) : null;
+    }
+
+    /**
+     * CSM index seed: two-level sitemap walk for the sorted /book-reviews/
+     * URL list, then one polite fetch per review page for JSON-LD metadata
+     * (CsmIndexScraper owns the robots constraints — sitemap-only `?page=`
+     * pagination, plain UA, 1 req/s). Cursor = last processed URL within the
+     * sorted list; `--resume` skips every URL ≤ cursor (string order matches
+     * the sorted walk). A failed page fetch/parse is logged and skipped —
+     * never fatal.
+     */
+    private function seedCsm(CsmIndexScraper $csm, IngestService $ingest): int
+    {
+        $limit = $this->limitOption();
+        $cursor = $this->option('resume') ? SyncRun::lastCursor('seed_csm') : null;
+
+        return $this->runSeed('seed_csm', 'csm', function (SyncRun $run) use ($csm, $ingest, $limit, $cursor) {
+            $urls = $csm->slugUrls();
+
+            // A zero-URL walk would otherwise complete exhausted=true and be
+            // indistinguishable from a finished seed.
+            if ($urls === []) {
+                $run->fail('CSM sitemap walk returned no book-review URLs');
+                $this->error('CSM sitemap walk returned no book-review URLs.');
+
+                return self::FAILURE;
+            }
+
+            $processed = 0;
+            foreach ($urls as $url) {
+                if ($cursor !== null && $url <= $cursor) {
+                    continue;
+                }
+                if ($limit !== null && $processed >= $limit) {
+                    $run->complete(['exhausted' => false]);
+                    $this->warn('Stopped (--limit reached); cursor persisted — rerun with --resume.');
+
+                    return self::SUCCESS;
+                }
+
+                // api_calls counts review-page fetches; the (cheap, fixed)
+                // sitemap walk is untracked.
+                $meta = $csm->reviewPageMeta($url);
+                $run->bumpApiCalls();
+                $processed++;
+
+                if ($meta === null) {
+                    // Already logged with detail by the scraper.
+                    $this->warn("CSM review page skipped (fetch/parse miss): {$url}");
+                } else {
+                    $ingest->ingest([
+                        'title' => $meta['title'],
+                        'author' => $meta['author'],
+                        'isbn13s' => $meta['isbn13s'],
+                        'min_age' => $meta['min_age'],
+                        'min_age_source' => $meta['min_age'] === null ? null : 'csm_index',
+                        'list_source' => 'csm_index',
+                        'list_key' => 'index',
+                        'review_url' => $url,
+                    ], $run);
+                }
+
+                // Resume-safety checkpoint: persists immediately. Skipped
+                // pages advance it too — --resume must not re-grind a
+                // permanently broken page.
+                $run->cursor($url);
+            }
+
+            $run->complete(['exhausted' => true]);
+            $this->info("CSM seed exhausted after {$processed} review pages.");
+
+            return self::SUCCESS;
+        });
     }
 
     /**
@@ -48,12 +149,10 @@ class BookSeed extends Command
             return self::FAILURE;
         }
 
-        $limit = $this->option('limit') !== null ? max(0, (int) $this->option('limit')) : null;
+        $limit = $this->limitOption();
         [$resumeList, $resumeDate] = $this->nytResumePoint();
 
-        $run = SyncRun::start('seed_nyt_history');
-
-        try {
+        return $this->runSeed('seed_nyt_history', 'nyt-history', function (SyncRun $run) use ($nyt, $ingest, $limit, $resumeList, $resumeDate) {
             try {
                 $names = $nyt->listNames();
             } catch (NytRateLimitedException) {
@@ -137,12 +236,7 @@ class BookSeed extends Command
             $this->info("NYT history backfill exhausted after {$calls} calls.");
 
             return self::SUCCESS;
-        } catch (\Throwable $e) {
-            $run->fail($e->getMessage());
-            $this->error("book:seed nyt-history failed: {$e->getMessage()}");
-
-            return self::FAILURE;
-        }
+        });
     }
 
     /** @return array{0: ?string, 1: ?string} [list, date] from the persisted `{list}|{date}` cursor */
@@ -172,7 +266,7 @@ class BookSeed extends Command
 
     private function invalidSource(): int
     {
-        $this->error('Unknown --source. Available: nyt-history.');
+        $this->error('Unknown --source. Available: csm, nyt-history.');
 
         return self::INVALID;
     }
