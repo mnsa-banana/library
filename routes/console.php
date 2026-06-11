@@ -15,3 +15,7 @@ Schedule::command('streaming:update')->dailyAt('03:00');
 
 // Monthly: refresh streaming service catalog
 Schedule::command('streaming:refresh-services')->monthlyOn(1, '02:00');
+
+// Weekly (Thursdays): sync the current NYT children's bestseller lists into
+// the book library. No-ops gracefully (exit 0) when NYT_BOOKS_API_KEY is unset.
+Schedule::command('book:weekly')->weeklyOn(4, '09:00')->withoutOverlapping();

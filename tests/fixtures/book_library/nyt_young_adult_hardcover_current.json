@@ -1,0 +1,25 @@
+{
+    "status": "OK",
+    "num_results": 1,
+    "results": {
+        "list_name": "Young Adult Hardcover",
+        "list_name_encoded": "young-adult-hardcover",
+        "published_date": "2026-06-14",
+        "previous_published_date": "2026-06-07",
+        "books": [
+            {
+                "rank": 1,
+                "weeks_on_list": 40,
+                "primary_isbn13": "9780063380400",
+                "primary_isbn10": "0063380404",
+                "title": "DIVINE RIVALS",
+                "author": "Rebecca Ross",
+                "description": "Two rival journalists fall in love.",
+                "book_image": "https://storage.googleapis.com/du-prd/books/images/9780063380400.jpg",
+                "isbns": [
+                    {"isbn10": "0063380404", "isbn13": "9780063380400"}
+                ]
+            }
+        ]
+    }
+}

@@ -1,0 +1,23 @@
+{
+    "status": "OK",
+    "copyright": "Copyright (c) 2026 The New York Times Company.",
+    "num_results": 2,
+    "results": [
+        {
+            "list_name": "Picture Books",
+            "display_name": "Children's Picture Books",
+            "list_name_encoded": "picture-books",
+            "oldest_published_date": "2024-12-15",
+            "newest_published_date": "2025-01-15",
+            "updated": "WEEKLY"
+        },
+        {
+            "list_name": "Chapter Books",
+            "display_name": "Children's Chapter Books",
+            "list_name_encoded": "chapter-books",
+            "oldest_published_date": "2014-06-08",
+            "newest_published_date": "2014-06-08",
+            "updated": "WEEKLY"
+        }
+    ]
+}

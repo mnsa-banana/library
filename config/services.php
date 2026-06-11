@@ -69,6 +69,16 @@ return [
         'api_key' => env('TMDB_API_KEY'),
     ],
 
+    'nyt' => [
+        // NYT Books API (book:weekly / book:seed --source=nyt-history).
+        'books_key' => env('NYT_BOOKS_API_KEY'),
+    ],
+
+    'google_books' => [
+        // Google Books volumes API (book:enrich).
+        'key' => env('GOOGLE_BOOKS_API_KEY'),
+    ],
+
     'revenuecat' => [
         'entitlement_id' => env('REVENUECAT_ENTITLEMENT_ID', 'Sponge Kids Pro'),
         'secret_key' => env('REVENUECAT_SECRET_KEY'),
