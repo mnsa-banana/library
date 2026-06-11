@@ -89,6 +89,8 @@ class OpenLibraryClient
     /**
      * GET a JSON endpoint; null on 404, retry transient failures
      * (429/5xx/connection) with exponential backoff, throw on the rest.
+     * 429 exhaustion raises OpenLibraryRateLimitedException; everything
+     * else throws plain RuntimeException.
      */
     private function get(string $url): ?Response
     {
@@ -123,6 +125,12 @@ class OpenLibraryClient
             // Retry on rate-limit and transient upstream errors
             if ($response->status() === 429 || $response->status() >= 500) {
                 if ($attempt === self::MAX_RETRIES - 1) {
+                    if ($response->status() === 429) {
+                        throw new OpenLibraryRateLimitedException(
+                            "Open Library rate limited (429) after retries on {$url}"
+                        );
+                    }
+
                     throw new RuntimeException(
                         "Open Library request failed ({$response->status()}) on {$url}"
                     );

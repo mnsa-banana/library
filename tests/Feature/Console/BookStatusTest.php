@@ -113,8 +113,10 @@ class BookStatusTest extends TestCase
 
         $this->assertSame(1, substr_count($output, '"Wings of Fire"'));
         $this->assertSame(1, substr_count($output, '"Warriors"'));
-        $this->assertStringContainsString('nyt', $output);
-        $this->assertStringContainsString('csm_index', $output);
+        // list_source/list_key both shown — operators need the key to hand-edit
+        // memberships.
+        $this->assertStringContainsString('[nyt/series-books]', $output);
+        $this->assertStringContainsString('[csm_index/series-books]', $output);
         // Candidates are printed for manual resolution.
         $this->assertStringContainsString('#3', $output);
         $this->assertStringContainsString('Wings of Fire: Legends', $output);

@@ -56,9 +56,11 @@ class GoogleBooksClient
             }
         }
 
-        $query = 'intitle:"'.$title.'"';
+        // Strip embedded quotes — they'd terminate the phrase early and
+        // malform the query.
+        $query = 'intitle:"'.str_replace('"', '', $title).'"';
         if ($author !== null && trim($author) !== '') {
-            $query .= ' inauthor:"'.$author.'"';
+            $query .= ' inauthor:"'.str_replace('"', '', $author).'"';
         }
 
         $volume = $this->firstVolume($query);

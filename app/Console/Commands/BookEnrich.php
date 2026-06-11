@@ -6,6 +6,7 @@ use App\Models\BookLibraryTitle;
 use App\Services\BookLibrary\GoogleBooksClient;
 use App\Services\BookLibrary\GoogleBooksRateLimitedException;
 use App\Services\BookLibrary\OpenLibraryClient;
+use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -64,18 +65,10 @@ class BookEnrich extends Command
                 try {
                     $calls += $this->openLibraryPass($row, $openLibrary, $run);
                     $calls += $this->googleBooksPass($row, $googleBooks, $run);
-                } catch (GoogleBooksRateLimitedException $e) {
+                } catch (GoogleBooksRateLimitedException|OpenLibraryRateLimitedException $e) {
                     // Clean stop: the interrupted row stays unstamped and is
                     // picked up by the next run's whereNull selection.
                     return $this->stopRun($run, $e->getMessage());
-                } catch (\RuntimeException $e) {
-                    // 429 always stops cleanly — OpenLibraryClient has no typed
-                    // rate-limit exception, so match its post-retry message.
-                    if (str_contains($e->getMessage(), '(429)')) {
-                        return $this->stopRun($run, $e->getMessage());
-                    }
-
-                    throw $e;
                 }
 
                 // Stamped ALWAYS — whiffed lookups must not wedge the row into
@@ -176,9 +169,14 @@ class BookEnrich extends Command
         }
 
         $before = $googleBooks->callsUsed();
-        $result = $googleBooks->lookup($row->isbn13s ?? [], $row->title, $row->author);
-        $calls = $googleBooks->callsUsed() - $before;
-        $run->bumpApiCalls($calls);
+        try {
+            $result = $googleBooks->lookup($row->isbn13s ?? [], $row->title, $row->author);
+        } finally {
+            // Charged even when lookup throws (rate limit): the interrupted
+            // call's quota burn must still land in the run log.
+            $calls = $googleBooks->callsUsed() - $before;
+            $run->bumpApiCalls($calls);
+        }
 
         if ($result !== null) {
             $row->description ??= $result['description'];

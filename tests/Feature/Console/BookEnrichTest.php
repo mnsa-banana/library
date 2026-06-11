@@ -329,6 +329,30 @@ class BookEnrichTest extends TestCase
         $this->assertSame('completed', $log->status);
         $this->assertFalse($log->metadata['exhausted']);
         $this->assertSame(0, $log->titles_processed);
+        // The interrupted lookup's quota burn (3 attempts) must still be logged.
+        $this->assertSame(3, $log->api_calls_used);
+    }
+
+    public function test_open_library_persistent_429_stops_the_run_cleanly_without_stamping_the_row(): void
+    {
+        BookLibraryTitle::create([
+            'title' => 'First Book',
+            'author' => 'Author One',
+            'isbn13s' => ['9781234567897'],
+        ]);
+        BookLibraryTitle::create(['title' => 'Second Book', 'author' => 'Author Two']);
+
+        Http::fake(['openlibrary.org/*' => Http::response('rate limited', 429)]);
+
+        $this->artisan('book:enrich')->assertExitCode(0);
+
+        // Neither row stamped — the interrupted row must be retried next run.
+        $this->assertSame(0, BookLibraryTitle::whereNotNull('enriched_at')->count());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('completed', $log->status);
+        $this->assertFalse($log->metadata['exhausted']);
+        $this->assertSame(0, $log->titles_processed);
     }
 
     public function test_google_books_403_rate_limit_exceeded_stops_the_run_cleanly(): void

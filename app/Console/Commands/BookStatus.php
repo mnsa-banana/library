@@ -89,10 +89,11 @@ class BookStatus extends Command
             $title = $incoming['title'] ?? '?';
             $author = $incoming['author'] ?? null;
             $source = $entry['list_source'] ?? '?';
+            $listKey = $entry['list_key'] ?? '?';
             $step = $entry['step'] ?? '?';
 
             $byline = $author !== null ? " by {$author}" : '';
-            $this->line("- \"{$title}\"{$byline} [{$source}] (step: {$step})");
+            $this->line("- \"{$title}\"{$byline} [{$source}/{$listKey}] (step: {$step})");
             foreach ($entry['candidates'] ?? [] as $candidate) {
                 $candidateAuthor = $candidate['author'] ?? '?';
                 $this->line("    candidate #{$candidate['id']}: {$candidate['title']} — {$candidateAuthor}");

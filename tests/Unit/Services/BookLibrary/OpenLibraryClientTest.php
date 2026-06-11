@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\BookLibrary;
 
 use App\Services\BookLibrary\OpenLibraryClient;
+use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Tests\TestCase;
@@ -65,6 +66,20 @@ class OpenLibraryClientTest extends TestCase
 
         $this->assertSame('OL45804W', $result['work_key']);
         Http::assertSentCount(2);
+    }
+
+    public function test_resolve_isbn_throws_typed_rate_limit_exception_after_persistent_429(): void
+    {
+        Http::fake(['openlibrary.org/isbn/*' => Http::response('rate limited', 429)]);
+
+        try {
+            (new OpenLibraryClient(backoffBaseMs: 0))->resolveIsbn('9780064404990');
+            $this->fail('Expected OpenLibraryRateLimitedException after exhausting retries');
+        } catch (OpenLibraryRateLimitedException $e) {
+            $this->assertStringContainsString('429', $e->getMessage());
+        }
+
+        Http::assertSentCount(3);
     }
 
     public function test_resolve_isbn_throws_after_persistent_server_errors(): void
