@@ -121,12 +121,13 @@ class BookSeedPluggedInTest extends TestCase
         $meta = (new PluggedInIndexScraper(delayMs: 0))
             ->reviewPageMeta(self::BASE.'/book-reviews/freedom-train-the-story-of-harriet-tubman/');
 
-        // Author is the type-custom item after the "Book Review" label — the
-        // later byline items (age band, publisher, year) must not bleed in.
-        // No isbn/min_age: Plugged In pages carry no JSON-LD book schema.
+        // Author is the type-custom item after the "Book Review" label; the
+        // age band right after it supplies min_age (lower bound). Later
+        // byline items (publisher, year) must not bleed into either.
         $this->assertSame([
             'title' => 'Freedom Train: The Story of Harriet Tubman',
             'author' => 'Dorothy Sterling',
+            'min_age' => 8,
         ], $meta);
     }
 
@@ -168,6 +169,7 @@ class BookSeedPluggedInTest extends TestCase
         $this->assertSame([
             'title' => 'Some Book',
             'author' => null,
+            'min_age' => null,
         ], $meta);
     }
 
@@ -193,6 +195,7 @@ class BookSeedPluggedInTest extends TestCase
         $this->assertSame([
             'title' => 'Authorless Book',
             'author' => null,
+            'min_age' => 8,
         ], $meta);
     }
 
@@ -232,6 +235,7 @@ class BookSeedPluggedInTest extends TestCase
         $this->assertSame([
             'title' => 'Label Only',
             'author' => null,
+            'min_age' => null,
         ], $meta);
     }
 
@@ -258,10 +262,9 @@ class BookSeedPluggedInTest extends TestCase
 
         $train = BookLibraryTitle::where('title', 'Freedom Train: The Story of Harriet Tubman')->sole();
         $this->assertSame('Dorothy Sterling', $train->author);
-        // Plugged In carries no machine-readable age/ISBN signal — nothing
-        // beyond title/author/list fields may be written.
-        $this->assertNull($train->min_age);
-        $this->assertNull($train->min_age_source);
+        // min_age from the byline age band ("8 to 12"); no ISBN signal.
+        $this->assertSame(8, $train->min_age);
+        $this->assertSame('pluggedin_index', $train->min_age_source);
         $this->assertSame([], $train->isbn13s);
 
         $membership = $train->memberships()->sole();

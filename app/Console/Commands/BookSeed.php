@@ -217,12 +217,14 @@ class BookSeed extends Command
                     // Already logged with detail by the scraper.
                     $this->warn("Plugged In review page skipped (fetch/parse miss): {$url}");
                 } else {
-                    // Title/author/list fields only — Plugged In exposes no
-                    // ISBN and no machine-readable age (spec: no min_age).
+                    // No ISBN on Plugged In pages; min_age comes from the
+                    // review byline's age band when present.
                     try {
                         $ingest->ingest([
                             'title' => $meta['title'],
                             'author' => $meta['author'],
+                            'min_age' => $meta['min_age'],
+                            'min_age_source' => $meta['min_age'] === null ? null : 'pluggedin_index',
                             'list_source' => 'pluggedin_index',
                             'list_key' => 'index',
                             'review_url' => $url,

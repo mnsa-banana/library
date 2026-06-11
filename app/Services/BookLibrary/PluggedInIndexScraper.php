@@ -145,7 +145,35 @@ class PluggedInIndexScraper
         return [
             'title' => $title,
             'author' => $author,
+            'min_age' => $this->bylineMinAge($html),
         ];
+    }
+
+    /**
+     * Minimum age from the byline's age-band item ("8 to 12", "14 to 18",
+     * "12 years old and up"). Scans every type-custom item after the
+     * "Book Review" label for the first age-band-shaped text, so it works
+     * whether or not the author item is present. Returns the band's lower
+     * bound, or null when no item matches.
+     */
+    private function bylineMinAge(string $html): ?int
+    {
+        $items = $this->postInfoItems($html);
+
+        foreach ($items as $i => $text) {
+            if (strcasecmp($text, 'Book Review') !== 0) {
+                continue;
+            }
+            foreach (array_slice($items, $i + 1) as $candidate) {
+                if (preg_match('/^(\d{1,2})\s*(?:to\s*\d{1,2}|years?\s*old\s*and\s*up|and\s*up|\+)$/i', $candidate, $m)) {
+                    return (int) $m[1];
+                }
+            }
+
+            return null;
+        }
+
+        return null;
     }
 
     /** First h1 — the Elementor theme-post-title widget (one h1 per page). */
@@ -191,16 +219,7 @@ class PluggedInIndexScraper
      */
     private function bylineAuthorCandidate(string $html): ?string
     {
-        preg_match_all(
-            '#<span[^>]*class=["\'][^"\']*elementor-post-info__item--type-custom[^"\']*["\'][^>]*>(.*?)</span>#si',
-            $html,
-            $matches
-        );
-
-        $items = array_map(
-            fn (string $text) => trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5)),
-            $matches[1]
-        );
+        $items = $this->postInfoItems($html);
 
         foreach ($items as $i => $text) {
             if (strcasecmp($text, 'Book Review') === 0) {
@@ -209,6 +228,21 @@ class PluggedInIndexScraper
         }
 
         return null;
+    }
+
+    /** @return array<string> trimmed text of the post-info type-custom items */
+    private function postInfoItems(string $html): array
+    {
+        preg_match_all(
+            '#<span[^>]*class=["\'][^"\']*elementor-post-info__item--type-custom[^"\']*["\'][^>]*>(.*?)</span>#si',
+            $html,
+            $matches
+        );
+
+        return array_map(
+            fn (string $text) => trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5)),
+            $matches[1]
+        );
     }
 
     /** Sitemap fetches are foundational — non-200/unparsable XML is fatal. */

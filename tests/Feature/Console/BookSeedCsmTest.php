@@ -137,6 +137,41 @@ class BookSeedCsmTest extends TestCase
         ], $meta);
     }
 
+    public function test_review_page_meta_reads_age_from_review_node_in_graph(): void
+    {
+        // Live CSM pages (verified 2026-06-11) wrap the JSON-LD in @graph and
+        // put typicalAgeRange on the REVIEW node — the Book node carries
+        // none. The scraper must graft the review-node age onto the book.
+        $json = json_encode([
+            '@context' => 'https://schema.org',
+            '@graph' => [[
+                '@type' => 'Review',
+                'name' => '1-2-3 Peas',
+                'typicalAgeRange' => '3+',
+                'itemReviewed' => [
+                    '@type' => 'Book',
+                    'name' => '1-2-3 Peas',
+                    'author' => ['@type' => 'Person', 'name' => 'Keith Baker'],
+                    'isbn' => '9781442445512',
+                ],
+            ]],
+        ], JSON_UNESCAPED_SLASHES);
+        Http::fake([
+            self::BASE.'/book-reviews/1-2-3-peas' => Http::response(
+                '<!DOCTYPE html><html><head>'
+                ."<script type=\"application/ld+json\">{$json}</script>"
+                .'</head><body></body></html>'
+            ),
+        ]);
+
+        $meta = (new CsmIndexScraper(delayMs: 0))->reviewPageMeta(self::BASE.'/book-reviews/1-2-3-peas');
+
+        $this->assertSame('1-2-3 Peas', $meta['title']);
+        $this->assertSame('Keith Baker', $meta['author']);
+        $this->assertSame(3, $meta['min_age']);
+        $this->assertSame(['9781442445512'], $meta['isbn13s']);
+    }
+
     public function test_review_page_meta_falls_back_to_og_title_when_json_ld_missing(): void
     {
         Http::fake([

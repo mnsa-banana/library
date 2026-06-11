@@ -146,7 +146,15 @@ class CsmIndexScraper
             $nodes = $decoded['@graph'] ?? (array_is_list($decoded) ? $decoded : [$decoded]);
             foreach ($nodes as $node) {
                 if (is_array($node) && is_array($node['itemReviewed'] ?? null)) {
-                    return $node['itemReviewed'];
+                    $book = $node['itemReviewed'];
+                    // CSM puts typicalAgeRange ("3+") on the REVIEW node, not
+                    // the Book node it reviews — graft it onto the returned
+                    // book array (book-node value wins if both ever exist).
+                    if (! isset($book['typicalAgeRange']) && isset($node['typicalAgeRange'])) {
+                        $book['typicalAgeRange'] = $node['typicalAgeRange'];
+                    }
+
+                    return $book;
                 }
             }
         }

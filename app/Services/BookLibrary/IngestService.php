@@ -16,7 +16,7 @@ use InvalidArgumentException;
 final class IngestService
 {
     /** Spec §Parent DB schema: precedence csm_index > wkar > nyt. */
-    private const MIN_AGE_PRECEDENCE = ['csm_index' => 3, 'wkar' => 2, 'nyt' => 1];
+    private const MIN_AGE_PRECEDENCE = ['csm_index' => 4, 'pluggedin_index' => 3, 'wkar' => 2, 'nyt' => 1];
 
     public function __construct(private WorkResolver $resolver) {}
 
