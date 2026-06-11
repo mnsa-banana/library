@@ -1,0 +1,1101 @@
+[
+  {
+    "title": "Charlotte's Web",
+    "author": "E.B. White",
+    "grade_band": "3-5",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Hot Mess",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "Tales of a Fourth Grade Nothing",
+    "author": "Judy Blume",
+    "grade_band": "3-5",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "Because of Winn-Dixie",
+    "author": "Kate DiCamillo",
+    "grade_band": "3-5",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "Wonder",
+    "author": "R.J. Palacio",
+    "grade_band": "3-5",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "Scaredy Squirrel",
+    "author": "Mélanie Watt",
+    "grade_band": "3-5",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: No Brainer",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: The Scarlet Shedder",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Rodrick Rules",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Getaway",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man Unleashed",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 6,
+    "year": 2026
+  },
+  {
+    "title": "Holes",
+    "author": "Louis Sachar",
+    "grade_band": "3-5",
+    "rank": 6,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Dog Days",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 7,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: Lord of the Fleas",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 7,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Last Straw",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 8,
+    "year": 2026
+  },
+  {
+    "title": "The Wild Robot",
+    "author": "Peter Brown",
+    "grade_band": "3-5",
+    "rank": 8,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: Brawl of the Wild",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "Hatchet",
+    "author": "Gary Paulsen",
+    "grade_band": "3-5",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: A Tale of Two Kitties",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 10,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Ugly Truth",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 11,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: Grime and Punishment",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 11,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Third Wheel",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: Fetch-22",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Hard Luck",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Long Haul",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: Mothering Heights",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man and Cat Kid",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 14,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Meltdown",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "The True Story of the 3 Little Pigs",
+    "author": "Jon Scieszka",
+    "grade_band": "3-5",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "Big Jim Begins",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 16,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Cabin Fever",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 16,
+    "year": 2026
+  },
+  {
+    "title": "A Bad Case of Stripes",
+    "author": "David Shannon",
+    "grade_band": "3-5",
+    "rank": 17,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Big Shot",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 17,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Old School",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Deep End",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: For Whom the Ball Rolls",
+    "author": "Dav Pilkey",
+    "grade_band": "3-5",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Wrecking Ball",
+    "author": "Jeff Kinney",
+    "grade_band": "3-5",
+    "rank": 19,
+    "year": 2026
+  },
+  {
+    "title": "Green Eggs and Ham",
+    "author": "Dr. Seuss",
+    "grade_band": "3-5",
+    "rank": 19,
+    "year": 2026
+  },
+  {
+    "title": "If You Give a Mouse a Cookie",
+    "author": "Laura Numeroff",
+    "grade_band": "3-5",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "Number the Stars",
+    "author": "Lois Lowry",
+    "grade_band": "3-5",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "Hatchet",
+    "author": "Gary Paulsen",
+    "grade_band": "6-8",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "The Outsiders",
+    "author": "S.E. Hinton",
+    "grade_band": "6-8",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "The Giver",
+    "author": "Lois Lowry",
+    "grade_band": "6-8",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "The Lightning Thief",
+    "author": "Rick Riordan",
+    "grade_band": "6-8",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Hot Mess",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "The Hunger Games",
+    "author": "Suzanne Collins",
+    "grade_band": "6-8",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "The Tell-Tale Heart",
+    "author": "Edgar Allan Poe",
+    "grade_band": "6-8",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "A Long Walk to Water: Based on a True Story",
+    "author": "Linda Sue Park",
+    "grade_band": "6-8",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: No Brainer",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "The Monkey's Paw",
+    "author": "W.W. Jacobs",
+    "grade_band": "6-8",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Getaway",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 6,
+    "year": 2026
+  },
+  {
+    "title": "The Diary of Anne Frank",
+    "author": "Frances Goodrich",
+    "grade_band": "6-8",
+    "rank": 6,
+    "year": 2026
+  },
+  {
+    "title": "Restart",
+    "author": "Gordon Korman",
+    "grade_band": "6-8",
+    "rank": 7,
+    "year": 2026
+  },
+  {
+    "title": "The Boy in the Striped Pajamas",
+    "author": "John Boyne",
+    "grade_band": "6-8",
+    "rank": 7,
+    "year": 2026
+  },
+  {
+    "title": "Holes",
+    "author": "Louis Sachar",
+    "grade_band": "6-8",
+    "rank": 8,
+    "year": 2026
+  },
+  {
+    "title": "Catching Fire",
+    "author": "Suzanne Collins",
+    "grade_band": "6-8",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "Freak the Mighty/The Mighty",
+    "author": "Rodman Philbrick",
+    "grade_band": "6-8",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "Number the Stars",
+    "author": "Lois Lowry",
+    "grade_band": "6-8",
+    "rank": 10,
+    "year": 2026
+  },
+  {
+    "title": "The Land of Stories: The Wishing Spell",
+    "author": "Chris Colfer",
+    "grade_band": "6-8",
+    "rank": 10,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Last Straw",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 11,
+    "year": 2026
+  },
+  {
+    "title": "Bud, Not Buddy",
+    "author": "Christopher Paul Curtis",
+    "grade_band": "6-8",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "Refugee",
+    "author": "Alan Gratz",
+    "grade_band": "6-8",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Rodrick Rules",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Dog Days",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 14,
+    "year": 2026
+  },
+  {
+    "title": "To Kill a Mockingbird",
+    "author": "Harper Lee",
+    "grade_band": "6-8",
+    "rank": 14,
+    "year": 2026
+  },
+  {
+    "title": "Night",
+    "author": "Elie Wiesel",
+    "grade_band": "6-8",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "Wonder",
+    "author": "R.J. Palacio",
+    "grade_band": "6-8",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Wrecking Ball",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 16,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Ugly Truth",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 17,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: The Meltdown",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "The Summer I Turned Pretty",
+    "author": "Jenny Han",
+    "grade_band": "6-8",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: Big Shot",
+    "author": "Jeff Kinney",
+    "grade_band": "6-8",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "The Giver",
+    "author": "P. Craig Russell",
+    "grade_band": "6-8",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "Hamlet",
+    "author": "William Shakespeare",
+    "grade_band": "9-12",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "Night",
+    "author": "Elie Wiesel",
+    "grade_band": "9-12",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "Romeo and Juliet",
+    "author": "William Shakespeare",
+    "grade_band": "9-12",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "The Great Gatsby",
+    "author": "F. Scott Fitzgerald",
+    "grade_band": "9-12",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "Frankenstein (Unabridged)",
+    "author": "Mary Shelley",
+    "grade_band": "9-12",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "The Crucible",
+    "author": "Arthur Miller",
+    "grade_band": "9-12",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "The Most Dangerous Game",
+    "author": "Richard Connell",
+    "grade_band": "9-12",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "To Kill a Mockingbird",
+    "author": "Harper Lee",
+    "grade_band": "9-12",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "Of Mice and Men",
+    "author": "John Steinbeck",
+    "grade_band": "9-12",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "The Land of Stories: The Wishing Spell",
+    "author": "Chris Colfer",
+    "grade_band": "9-12",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "Animal Farm",
+    "author": "George Orwell",
+    "grade_band": "9-12",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "It Ends with Us",
+    "author": "Colleen Hoover",
+    "grade_band": "9-12",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "The Hunger Games",
+    "author": "Suzanne Collins",
+    "grade_band": "9-12",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "Lord of the Flies",
+    "author": "William Golding",
+    "grade_band": "9-12",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "Macbeth",
+    "author": "William Shakespeare",
+    "grade_band": "9-12",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "The Curious Incident of the Dog in the Night-Time",
+    "author": "Mark Haddon",
+    "grade_band": "9-12",
+    "rank": 6,
+    "year": 2026
+  },
+  {
+    "title": "The Kite Runner",
+    "author": "Khaled Hosseini",
+    "grade_band": "9-12",
+    "rank": 7,
+    "year": 2026
+  },
+  {
+    "title": "Fahrenheit 451 (English)",
+    "author": "Ray Bradbury",
+    "grade_band": "9-12",
+    "rank": 8,
+    "year": 2026
+  },
+  {
+    "title": "Restart",
+    "author": "Gordon Korman",
+    "grade_band": "9-12",
+    "rank": 8,
+    "year": 2026
+  },
+  {
+    "title": "A Raisin in the Sun",
+    "author": "Lorraine Hansberry",
+    "grade_band": "9-12",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "The Outsiders",
+    "author": "S.E. Hinton",
+    "grade_band": "9-12",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "Beowulf",
+    "author": "Anonymous",
+    "grade_band": "9-12",
+    "rank": 10,
+    "year": 2026
+  },
+  {
+    "title": "The Metamorphosis",
+    "author": "Franz Kafka",
+    "grade_band": "9-12",
+    "rank": 10,
+    "year": 2026
+  },
+  {
+    "title": "Catching Fire",
+    "author": "Suzanne Collins",
+    "grade_band": "9-12",
+    "rank": 11,
+    "year": 2026
+  },
+  {
+    "title": "Fences",
+    "author": "August Wilson",
+    "grade_band": "9-12",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "Things Fall Apart",
+    "author": "Chinua Achebe",
+    "grade_band": "9-12",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "Born a Crime: Stories from a South African Childhood",
+    "author": "Trevor Noah",
+    "grade_band": "9-12",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "Julius Caesar",
+    "author": "William Shakespeare",
+    "grade_band": "9-12",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "Sing, Unburied, Sing",
+    "author": "Jesmyn Ward",
+    "grade_band": "9-12",
+    "rank": 14,
+    "year": 2026
+  },
+  {
+    "title": "Their Eyes Were Watching God",
+    "author": "Zora Neale Hurston",
+    "grade_band": "9-12",
+    "rank": 14,
+    "year": 2026
+  },
+  {
+    "title": "The Catcher in the Rye",
+    "author": "J.D. Salinger",
+    "grade_band": "9-12",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "The Summer I Turned Pretty",
+    "author": "Jenny Han",
+    "grade_band": "9-12",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "The Lightning Thief",
+    "author": "Rick Riordan",
+    "grade_band": "9-12",
+    "rank": 16,
+    "year": 2026
+  },
+  {
+    "title": "The Scarlet Letter (Unabridged)",
+    "author": "Nathaniel Hawthorne",
+    "grade_band": "9-12",
+    "rank": 16,
+    "year": 2026
+  },
+  {
+    "title": "Diary of a Wimpy Kid: No Brainer",
+    "author": "Jeff Kinney",
+    "grade_band": "9-12",
+    "rank": 17,
+    "year": 2026
+  },
+  {
+    "title": "The Pearl",
+    "author": "John Steinbeck",
+    "grade_band": "9-12",
+    "rank": 17,
+    "year": 2026
+  },
+  {
+    "title": "A Long Walk to Water: Based on a True Story",
+    "author": "Linda Sue Park",
+    "grade_band": "9-12",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "All American Boys",
+    "author": "Jason Reynolds",
+    "grade_band": "9-12",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "The House on Mango Street",
+    "author": "Sandra Cisneros",
+    "grade_band": "9-12",
+    "rank": 19,
+    "year": 2026
+  },
+  {
+    "title": "The Maze Runner",
+    "author": "James Dashner",
+    "grade_band": "9-12",
+    "rank": 19,
+    "year": 2026
+  },
+  {
+    "title": "Twilight",
+    "author": "Stephenie Meyer",
+    "grade_band": "9-12",
+    "rank": 19,
+    "year": 2026
+  },
+  {
+    "title": "1984 (English)",
+    "author": "George Orwell",
+    "grade_band": "9-12",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "Harry Potter and the Sorcerer's Stone/Harry Potter and the Philosopher's Stone",
+    "author": "J.K. Rowling",
+    "grade_band": "9-12",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "Tuesdays with Morrie",
+    "author": "Mitch Albom",
+    "grade_band": "9-12",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "Green Eggs and Ham",
+    "author": "Dr. Seuss",
+    "grade_band": "K-2",
+    "rank": 1,
+    "year": 2026
+  },
+  {
+    "title": "Biscuit Goes to School",
+    "author": "Alyssa Satin Capucilli",
+    "grade_band": "K-2",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "If You Give a Mouse a Cookie",
+    "author": "Laura Numeroff",
+    "grade_band": "K-2",
+    "rank": 2,
+    "year": 2026
+  },
+  {
+    "title": "A Big Guy Took My Ball!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "The Cat in the Hat",
+    "author": "Dr. Seuss",
+    "grade_band": "K-2",
+    "rank": 3,
+    "year": 2026
+  },
+  {
+    "title": "Let's Go for a Drive!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "The Very Hungry Caterpillar",
+    "author": "Eric Carle",
+    "grade_band": "K-2",
+    "rank": 4,
+    "year": 2026
+  },
+  {
+    "title": "Hi! Fly Guy",
+    "author": "Tedd Arnold",
+    "grade_band": "K-2",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "The Bad Seed",
+    "author": "Jory John",
+    "grade_band": "K-2",
+    "rank": 5,
+    "year": 2026
+  },
+  {
+    "title": "Pete the Cat: I Love My White Shoes",
+    "author": "Eric Litwin",
+    "grade_band": "K-2",
+    "rank": 6,
+    "year": 2026
+  },
+  {
+    "title": "There Was a Cold Lady Who Swallowed Some Snow!",
+    "author": "Lucille Colandro",
+    "grade_band": "K-2",
+    "rank": 6,
+    "year": 2026
+  },
+  {
+    "title": "I'm a Frog!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 7,
+    "year": 2026
+  },
+  {
+    "title": "There Was an Old Lady Who Swallowed a Bat!",
+    "author": "Lucille Colandro",
+    "grade_band": "K-2",
+    "rank": 7,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man",
+    "author": "Dav Pilkey",
+    "grade_band": "K-2",
+    "rank": 8,
+    "year": 2026
+  },
+  {
+    "title": "Pete the Cat: Pete's Big Lunch",
+    "author": "James Dean",
+    "grade_band": "K-2",
+    "rank": 8,
+    "year": 2026
+  },
+  {
+    "title": "Big Red Lollipop",
+    "author": "Rukhsana Khan",
+    "grade_band": "K-2",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "Biscuit",
+    "author": "Alyssa Satin Capucilli",
+    "grade_band": "K-2",
+    "rank": 9,
+    "year": 2026
+  },
+  {
+    "title": "Biscuit Finds a Friend",
+    "author": "Alyssa Satin Capucilli",
+    "grade_band": "K-2",
+    "rank": 10,
+    "year": 2026
+  },
+  {
+    "title": "Creepy Carrots!",
+    "author": "Aaron Reynolds",
+    "grade_band": "K-2",
+    "rank": 10,
+    "year": 2026
+  },
+  {
+    "title": "Don't Let the Pigeon Drive the Bus!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 11,
+    "year": 2026
+  },
+  {
+    "title": "If You Give a Pig a Pancake",
+    "author": "Laura Numeroff",
+    "grade_band": "K-2",
+    "rank": 11,
+    "year": 2026
+  },
+  {
+    "title": "Pete the Cat: Too Cool for School",
+    "author": "Kimberly Dean",
+    "grade_band": "K-2",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "The Good Egg",
+    "author": "Jory John",
+    "grade_band": "K-2",
+    "rank": 12,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man Unleashed",
+    "author": "Dav Pilkey",
+    "grade_band": "K-2",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "Waiting Is Not Easy!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 13,
+    "year": 2026
+  },
+  {
+    "title": "I Am Invited to a Party!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 14,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: Grime and Punishment",
+    "author": "Dav Pilkey",
+    "grade_band": "K-2",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "My New Friend Is So Fun!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 15,
+    "year": 2026
+  },
+  {
+    "title": "Dog Man: A Tale of Two Kitties",
+    "author": "Dav Pilkey",
+    "grade_band": "K-2",
+    "rank": 16,
+    "year": 2026
+  },
+  {
+    "title": "I Really Like Slop!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 16,
+    "year": 2026
+  },
+  {
+    "title": "Clark the Shark",
+    "author": "Bruce Hale",
+    "grade_band": "K-2",
+    "rank": 17,
+    "year": 2026
+  },
+  {
+    "title": "Should I Share My Ice Cream?",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 17,
+    "year": 2026
+  },
+  {
+    "title": "There Is a Bird on Your Head!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 18,
+    "year": 2026
+  },
+  {
+    "title": "Click, Clack, Moo: Cows That Type",
+    "author": "Doreen Cronin",
+    "grade_band": "K-2",
+    "rank": 19,
+    "year": 2026
+  },
+  {
+    "title": "We Are in a Book!",
+    "author": "Mo Willems",
+    "grade_band": "K-2",
+    "rank": 19,
+    "year": 2026
+  },
+  {
+    "title": "Pete the Cat: Pete at the Beach",
+    "author": "James Dean",
+    "grade_band": "K-2",
+    "rank": 20,
+    "year": 2026
+  },
+  {
+    "title": "The Couch Potato",
+    "author": "Jory John",
+    "grade_band": "K-2",
+    "rank": 20,
+    "year": 2026
+  }
+]
