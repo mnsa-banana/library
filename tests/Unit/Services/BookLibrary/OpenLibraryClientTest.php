@@ -50,12 +50,85 @@ class OpenLibraryClientTest extends TestCase
         $this->assertNull((new OpenLibraryClient)->resolveIsbn('9780064404990'));
     }
 
-    public function test_resolve_isbn_throws_on_server_error(): void
+    public function test_resolve_isbn_retries_429_then_succeeds(): void
+    {
+        Http::fake([
+            'openlibrary.org/isbn/*' => Http::sequence()
+                ->push('rate limited', 429)
+                ->push([
+                    'works' => [['key' => '/works/OL45804W']],
+                    'isbn_13' => ['9780064404990'],
+                ]),
+        ]);
+
+        $result = (new OpenLibraryClient(backoffBaseMs: 0))->resolveIsbn('9780064404990');
+
+        $this->assertSame('OL45804W', $result['work_key']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_resolve_isbn_throws_after_persistent_server_errors(): void
     {
         Http::fake(['openlibrary.org/isbn/*' => Http::response('upstream error', 503)]);
 
-        $this->expectException(RuntimeException::class);
-        (new OpenLibraryClient)->resolveIsbn('9780064404990');
+        try {
+            (new OpenLibraryClient(backoffBaseMs: 0))->resolveIsbn('9780064404990');
+            $this->fail('Expected RuntimeException after exhausting retries');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('503', $e->getMessage());
+        }
+
+        Http::assertSentCount(3);
+    }
+
+    public function test_resolve_isbn_retries_connection_exception_then_succeeds(): void
+    {
+        Http::fake([
+            'openlibrary.org/isbn/*' => Http::sequence()
+                ->pushFailedConnection('cURL error 28: timed out')
+                ->push([
+                    'works' => [['key' => '/works/OL45804W']],
+                    'isbn_13' => ['9780064404990'],
+                ]),
+        ]);
+
+        $result = (new OpenLibraryClient(backoffBaseMs: 0))->resolveIsbn('9780064404990');
+
+        $this->assertSame('OL45804W', $result['work_key']);
+        Http::assertSentCount(2);
+    }
+
+    public function test_resolve_isbn_throws_after_persistent_connection_failures(): void
+    {
+        Http::fake([
+            'openlibrary.org/isbn/*' => Http::sequence()
+                ->pushFailedConnection('cURL error 28: timed out')
+                ->pushFailedConnection('cURL error 28: timed out')
+                ->pushFailedConnection('cURL error 28: timed out'),
+        ]);
+
+        try {
+            (new OpenLibraryClient(backoffBaseMs: 0))->resolveIsbn('9780064404990');
+            $this->fail('Expected RuntimeException after exhausting retries');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('connection failed', $e->getMessage());
+        }
+
+        Http::assertSentCount(3);
+    }
+
+    public function test_resolve_isbn_fails_fast_on_non_retryable_4xx(): void
+    {
+        Http::fake(['openlibrary.org/isbn/*' => Http::response('bad request', 400)]);
+
+        try {
+            (new OpenLibraryClient(backoffBaseMs: 0))->resolveIsbn('9780064404990');
+            $this->fail('Expected RuntimeException on 400');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('400', $e->getMessage());
+        }
+
+        Http::assertSentCount(1);
     }
 
     public function test_work_editions_paginates_and_collects_isbns_and_cover(): void

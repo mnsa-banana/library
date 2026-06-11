@@ -2,6 +2,7 @@
 
 namespace App\Services\BookLibrary;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -10,6 +11,10 @@ use RuntimeException;
  * Minimal Open Library API client for work resolution (WorkResolver step 2)
  * and edition enrichment (book:enrich). All HTTP goes through Laravel Http so
  * tests can fake it; an optional per-request delay keeps seed runs polite.
+ * Transient failures (429/5xx/connection) are retried with exponential
+ * backoff, mirroring StreamingAvailability\Client — at ~15k requests per
+ * seed run a single blip must not kill the run. Tests pass backoffBaseMs: 0
+ * so retries never sleep.
  */
 class OpenLibraryClient
 {
@@ -17,7 +22,12 @@ class OpenLibraryClient
 
     private const COVER_URL = 'https://covers.openlibrary.org/b/id/%d-L.jpg';
 
-    public function __construct(private int $delayMs = 0) {}
+    private const MAX_RETRIES = 3;
+
+    public function __construct(
+        private int $delayMs = 0,
+        private int $backoffBaseMs = 1000,
+    ) {}
 
     /**
      * Resolve an ISBN-13 to its Open Library work. Returns null when the
@@ -76,25 +86,66 @@ class OpenLibraryClient
         return ['isbn13s' => $isbn13s, 'cover_url' => $coverUrl];
     }
 
-    /** GET a JSON endpoint; null on 404, throw on other failures. */
+    /**
+     * GET a JSON endpoint; null on 404, retry transient failures
+     * (429/5xx/connection) with exponential backoff, throw on the rest.
+     */
     private function get(string $url): ?Response
     {
-        if ($this->delayMs > 0) {
-            usleep($this->delayMs * 1000);
-        }
+        for ($attempt = 0; $attempt < self::MAX_RETRIES; $attempt++) {
+            if ($this->delayMs > 0) {
+                usleep($this->delayMs * 1000);
+            }
 
-        $response = Http::timeout(30)->get($url);
+            try {
+                $response = Http::timeout(30)->get($url);
+            } catch (ConnectionException $e) {
+                // Transport-level failure (DNS, connect, or read timeout):
+                // treat as transient and retry rather than aborting the run.
+                if ($attempt === self::MAX_RETRIES - 1) {
+                    throw new RuntimeException(
+                        "Open Library connection failed on {$url} after retries: {$e->getMessage()}",
+                        previous: $e,
+                    );
+                }
+                $this->backoff($attempt);
 
-        if ($response->status() === 404) {
-            return null;
-        }
-        if ($response->failed()) {
+                continue;
+            }
+
+            if ($response->status() === 404) {
+                return null;
+            }
+            if ($response->successful()) {
+                return $response;
+            }
+
+            // Retry on rate-limit and transient upstream errors
+            if ($response->status() === 429 || $response->status() >= 500) {
+                if ($attempt === self::MAX_RETRIES - 1) {
+                    throw new RuntimeException(
+                        "Open Library request failed ({$response->status()}) on {$url}"
+                    );
+                }
+                $this->backoff($attempt);
+
+                continue;
+            }
+
+            // Non-retryable 4xx — fail fast
             throw new RuntimeException(
                 "Open Library request failed ({$response->status()}) on {$url}"
             );
         }
 
-        return $response;
+        throw new RuntimeException("Open Library request failed after retries on {$url}");
+    }
+
+    private function backoff(int $attempt): void
+    {
+        if ($this->backoffBaseMs > 0) {
+            usleep($this->backoffBaseMs * (2 ** $attempt) * 1000); // 1s, 2s
+        }
     }
 
     private function workKeyFrom(array $edition): ?string

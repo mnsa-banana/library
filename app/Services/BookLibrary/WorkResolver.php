@@ -164,8 +164,23 @@ class WorkResolver
         $row->description ??= $item['description'] ?? null;
 
         $workKey = $ol['work_key'] ?? null;
-        if ($row->work_key === null && $workKey !== null && $this->workKeyIsFree($workKey, $row->id)) {
-            $row->work_key = $workKey;
+        if ($row->work_key === null && $workKey !== null) {
+            $conflict = BookLibraryTitle::where('work_key', $workKey)
+                ->where('id', '!=', $row->id)
+                ->first();
+
+            if ($conflict === null) {
+                $row->work_key = $workKey;
+            } else {
+                // $row and $conflict are duplicates of the same OL work; the
+                // stamp must be skipped (work_key is unique) but silently
+                // dropping it would hide the corruption — surface it.
+                Log::warning('book-library: work_key collision, skipping stamp', [
+                    'work_key' => $workKey,
+                    'matched' => ['id' => $row->id, 'title' => $row->title],
+                    'conflicting' => ['id' => $conflict->id, 'title' => $conflict->title],
+                ]);
+            }
         }
 
         $union = array_values(array_unique(array_merge(
@@ -192,6 +207,9 @@ class WorkResolver
             'title' => $title,
             'author' => $item['author'] ?? null,
             'year' => $item['year'] ?? null,
+            // workKeyIsFree here is defensive/unreachable: step 2 already
+            // matches any row carrying the OL work key, so create() only runs
+            // when no row has it.
             'work_key' => $workKey !== null && $this->workKeyIsFree($workKey) ? $workKey : null,
             'cover_url' => $item['cover_url'] ?? $ol['cover_url'] ?? null,
             'description' => $item['description'] ?? null,
@@ -200,11 +218,9 @@ class WorkResolver
     }
 
     /** work_key is unique; never stamp one that another row already carries. */
-    private function workKeyIsFree(string $workKey, ?int $exceptId = null): bool
+    private function workKeyIsFree(string $workKey): bool
     {
-        return BookLibraryTitle::where('work_key', $workKey)
-            ->when($exceptId !== null, fn ($query) => $query->where('id', '!=', $exceptId))
-            ->doesntExist();
+        return BookLibraryTitle::where('work_key', $workKey)->doesntExist();
     }
 
     private function ambiguousPayload(string $step, array $item, array $candidates): array

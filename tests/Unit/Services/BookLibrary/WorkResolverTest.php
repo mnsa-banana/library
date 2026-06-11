@@ -7,6 +7,7 @@ use App\Services\BookLibrary\OpenLibraryClient;
 use App\Services\BookLibrary\WorkResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class WorkResolverTest extends TestCase
@@ -322,6 +323,60 @@ class WorkResolverTest extends TestCase
         $this->assertSame('https://covers.openlibrary.org/b/id/1-L.jpg', $fresh->cover_url);
         $this->assertSame('A boy discovers the dark secrets behind his community.', $fresh->description);
         $this->assertEqualsCanonicalizing(['9780544336261', '9780547995663'], $fresh->isbn13s);
+    }
+
+    public function test_work_key_collision_skips_stamp_and_logs_warning(): void
+    {
+        Log::spy();
+        Http::fake([
+            'openlibrary.org/isbn/9780064404990.json' => Http::response(
+                $this->olEdition('OL45804W', ['9780064404990'])
+            ),
+        ]);
+        // Row A: matched by ISBN in step 1, no work_key yet.
+        $a = BookLibraryTitle::factory()->create([
+            'title' => 'The Lion, the Witch and the Wardrobe',
+            'author' => 'C. S. Lewis',
+            'work_key' => null,
+            'isbn13s' => ['9780064404990'],
+        ]);
+        // Row B: already carries the work_key OL resolves for A's ISBN.
+        $b = BookLibraryTitle::factory()->create([
+            'title' => 'The Lion the Witch and the Wardrobe (Collector\'s Edition)',
+            'author' => 'C. S. Lewis',
+            'work_key' => 'OL45804W',
+            'isbn13s' => ['9780060234812'],
+        ]);
+
+        $result = $this->resolver()->resolve([
+            'title' => 'The Lion, the Witch and the Wardrobe',
+            'author' => 'C. S. Lewis',
+            'isbn13s' => ['9780064404990', '978-0-547-99566-3'],
+        ]);
+
+        // Merge lands on A without violating the work_key unique constraint.
+        $this->assertTrue($result['title']->is($a));
+        $fresh = $a->fresh();
+        $this->assertNull($fresh->work_key);
+        $this->assertEqualsCanonicalizing(
+            ['9780064404990', '9780547995663'],
+            $fresh->isbn13s
+        );
+        $this->assertSame('OL45804W', $b->fresh()->work_key);
+        $this->assertSame(2, BookLibraryTitle::count());
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->with(
+                'book-library: work_key collision, skipping stamp',
+                \Mockery::on(function (array $context) use ($a, $b) {
+                    return $context['work_key'] === 'OL45804W'
+                        && $context['matched']['id'] === $a->id
+                        && $context['matched']['title'] === $a->title
+                        && $context['conflicting']['id'] === $b->id
+                        && $context['conflicting']['title'] === $b->title;
+                })
+            );
     }
 
     // ── Narnia end-to-end dedup ───────────────────────────────────────────
