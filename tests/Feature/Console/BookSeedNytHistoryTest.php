@@ -33,20 +33,28 @@ class BookSeedNytHistoryTest extends TestCase
         );
     }
 
+    /** NYT's 404 shape for retired slugs and dates past the kept-history floor. */
+    private function listNotFound(): \GuzzleHttp\Promise\PromiseInterface
+    {
+        return Http::response(['status' => 'ERROR', 'errors' => ['list not found']], 404);
+    }
+
     /**
-     * Names fixture covers picture-books (newest 2025-01-15, oldest 2024-12-15)
-     * and chapter-books (single page); the other five history lists are absent
-     * and must be skipped without any page fetch.
+     * Post-names.json world (NYT removed the discovery endpoint AND the
+     * pre-2015 retired lists in mid-2026): each list's walk enters at
+     * 'current' and follows previous_published_date. picture-books has a
+     * two-page chain whose third date 404s (the kept-history floor); every
+     * other list 404s at 'current' (retired or not faked).
      *
      * @param  array<string, mixed>  $overrides  pattern => response, matched before the defaults
      */
     private function fakeHistory(array $overrides = []): void
     {
         Http::fake($overrides + [
-            'api.nytimes.com/svc/books/v3/lists/names.json*' => Http::response($this->fixture('nyt_names')),
-            'api.nytimes.com/svc/books/v3/lists/2025-01-15/picture-books.json*' => Http::response($this->fixture('nyt_picture_books_2025_01_15')),
+            'api.nytimes.com/svc/books/v3/lists/current/picture-books.json*' => Http::response($this->fixture('nyt_picture_books_2025_01_15')),
             'api.nytimes.com/svc/books/v3/lists/2025-01-03/picture-books.json*' => Http::response($this->fixture('nyt_picture_books_2025_01_03')),
             'api.nytimes.com/svc/books/v3/lists/2014-06-08/chapter-books.json*' => Http::response($this->fixture('nyt_chapter_books_2014_06_08')),
+            'api.nytimes.com/*' => $this->listNotFound(),
             'openlibrary.org/*' => Http::response(['error' => 'notfound'], 404),
         ]);
     }
@@ -62,24 +70,30 @@ class BookSeedNytHistoryTest extends TestCase
             ->all();
     }
 
-    public function test_history_walks_previous_published_date_and_stops_at_each_lists_oldest_date(): void
+    public function test_history_walks_previous_published_date_and_stops_on_floor_404(): void
     {
         $this->fakeHistory();
 
         $this->artisan('book:seed', ['--source' => 'nyt-history'])->assertExitCode(0);
 
-        // Walk order proves: start at lists/names newest, follow the response's
-        // previous_published_date (2025-01-15 → 2025-01-03), do NOT fetch
-        // 2024-11-20 (older than picture-books' oldest 2024-12-15), and stop
-        // chapter-books on its empty previous_published_date.
+        // Walk order proves: enter each list at 'current', follow the
+        // response's previous_published_date (current → 2025-01-03), treat the
+        // 404 at 2024-11-20 as the kept-history floor (skip, don't fail), and
+        // probe every remaining HISTORY_LISTS slug at 'current' (each 404s —
+        // the pre-2015 retired lists are gone from the API).
         $this->assertSame([
-            '/svc/books/v3/lists/names.json',
-            '/svc/books/v3/lists/2025-01-15/picture-books.json',
+            '/svc/books/v3/lists/current/picture-books.json',
             '/svc/books/v3/lists/2025-01-03/picture-books.json',
-            '/svc/books/v3/lists/2014-06-08/chapter-books.json',
+            '/svc/books/v3/lists/2024-11-20/picture-books.json',
+            '/svc/books/v3/lists/current/childrens-middle-grade-hardcover.json',
+            '/svc/books/v3/lists/current/young-adult-hardcover.json',
+            '/svc/books/v3/lists/current/series-books.json',
+            '/svc/books/v3/lists/current/chapter-books.json',
+            '/svc/books/v3/lists/current/childrens-middle-grade.json',
+            '/svc/books/v3/lists/current/young-adult.json',
         ], $this->nytPaths());
 
-        $this->assertSame(4, BookLibraryTitle::count());
+        $this->assertSame(3, BookLibraryTitle::count());
 
         $truck = BookLibraryTitle::where('title', 'Little Blue Truck')->sole();
         $membership = $truck->memberships()->sole();
@@ -88,18 +102,13 @@ class BookSeedNytHistoryTest extends TestCase
         $this->assertSame(150, $membership->weeks_on_list);
         $this->assertSame('2025-01-03', $membership->as_of_date->toDateString());
 
-        // chapter-books band → min_age 4.
-        $mth = BookLibraryTitle::where('title', 'Magic Tree House')->sole();
-        $this->assertSame(4, $mth->min_age);
-        $this->assertSame('nyt', $mth->min_age_source);
-
         $log = BookSyncLog::sole();
         $this->assertSame('seed_nyt_history', $log->sync_type);
         $this->assertSame('completed', $log->status);
-        $this->assertSame(4, $log->api_calls_used);
-        $this->assertSame(4, $log->titles_processed);
+        $this->assertSame(9, $log->api_calls_used);
+        $this->assertSame(3, $log->titles_processed);
         $this->assertTrue($log->metadata['exhausted']);
-        $this->assertSame('chapter-books|2014-06-08', $log->last_cursor);
+        $this->assertSame('picture-books|2025-01-03', $log->last_cursor);
     }
 
     public function test_backfill_keeps_newest_week_stats_for_titles_charting_multiple_weeks(): void
@@ -118,7 +127,7 @@ class BookSeedNytHistoryTest extends TestCase
         ];
 
         $this->fakeHistory([
-            'api.nytimes.com/svc/books/v3/lists/2025-01-15/picture-books.json*' => Http::response(['results' => [
+            'api.nytimes.com/svc/books/v3/lists/current/picture-books.json*' => Http::response(['results' => [
                 'published_date' => '2025-01-15',
                 'previous_published_date' => '2025-01-03',
                 'books' => [$bigJim(3, 12)],
@@ -146,8 +155,7 @@ class BookSeedNytHistoryTest extends TestCase
         $this->artisan('book:seed', ['--source' => 'nyt-history', '--limit' => 1])->assertExitCode(0);
 
         $this->assertSame([
-            '/svc/books/v3/lists/names.json',
-            '/svc/books/v3/lists/2025-01-15/picture-books.json',
+            '/svc/books/v3/lists/current/picture-books.json',
         ], $this->nytPaths());
 
         $this->assertSame(2, BookLibraryTitle::count());
@@ -168,11 +176,16 @@ class BookSeedNytHistoryTest extends TestCase
 
         $this->artisan('book:seed', ['--source' => 'nyt-history', '--resume' => true])->assertExitCode(0);
 
-        // No fetch of the already-walked newest page (2025-01-15).
+        // No fetch of the already-walked newest page ('current' / 2025-01-15).
         $this->assertSame([
-            '/svc/books/v3/lists/names.json',
             '/svc/books/v3/lists/2025-01-03/picture-books.json',
-            '/svc/books/v3/lists/2014-06-08/chapter-books.json',
+            '/svc/books/v3/lists/2024-11-20/picture-books.json',
+            '/svc/books/v3/lists/current/childrens-middle-grade-hardcover.json',
+            '/svc/books/v3/lists/current/young-adult-hardcover.json',
+            '/svc/books/v3/lists/current/series-books.json',
+            '/svc/books/v3/lists/current/chapter-books.json',
+            '/svc/books/v3/lists/current/childrens-middle-grade.json',
+            '/svc/books/v3/lists/current/young-adult.json',
         ], $this->nytPaths());
 
         $log = BookSyncLog::orderByDesc('id')->first();
@@ -190,10 +203,19 @@ class BookSeedNytHistoryTest extends TestCase
 
         $this->artisan('book:seed', ['--source' => 'nyt-history', '--resume' => true])->assertExitCode(0);
 
+        // Resume enters chapter-books at its exact persisted date (the only
+        // way a retired slug's page would still be reachable; the entry
+        // probe at 'current' 404s), then walks the remaining HISTORY_LISTS tail.
         $this->assertSame([
-            '/svc/books/v3/lists/names.json',
             '/svc/books/v3/lists/2014-06-08/chapter-books.json',
+            '/svc/books/v3/lists/current/childrens-middle-grade.json',
+            '/svc/books/v3/lists/current/young-adult.json',
         ], $this->nytPaths());
+
+        // chapter-books band → min_age 4 (NYT mapping still applied on resume).
+        $mth = BookLibraryTitle::where('title', 'Magic Tree House')->sole();
+        $this->assertSame(4, $mth->min_age);
+        $this->assertSame('nyt', $mth->min_age_source);
     }
 
     public function test_run_stops_at_450_call_budget_with_cursor_persisted(): void
@@ -203,20 +225,22 @@ class BookSeedNytHistoryTest extends TestCase
         // must only ever follow the field).
         Http::fake(function ($request) {
             $url = $request->url();
-            if (str_contains($url, '/lists/names.json')) {
-                return Http::response(['results' => [[
-                    'list_name_encoded' => 'picture-books',
-                    'oldest_published_date' => '2000-01-01',
-                    'newest_published_date' => '2025-12-28',
-                ]]]);
+            if (str_contains($url, '/lists/current/picture-books.json')) {
+                return Http::response(['results' => [
+                    'published_date' => '2025-12-28',
+                    'previous_published_date' => '2025-12-21',
+                    'books' => [],
+                ]]);
             }
-            preg_match('#/lists/(\d{4}-\d{2}-\d{2})/picture-books\.json#', $url, $m);
+            if (preg_match('#/lists/(\d{4}-\d{2}-\d{2})/picture-books\.json#', $url, $m)) {
+                return Http::response(['results' => [
+                    'published_date' => $m[1],
+                    'previous_published_date' => Carbon::parse($m[1])->subDays(7)->toDateString(),
+                    'books' => [],
+                ]]);
+            }
 
-            return Http::response(['results' => [
-                'published_date' => $m[1],
-                'previous_published_date' => Carbon::parse($m[1])->subDays(7)->toDateString(),
-                'books' => [],
-            ]]);
+            return Http::response(['status' => 'ERROR', 'errors' => ['list not found']], 404);
         });
 
         $this->artisan('book:seed', ['--source' => 'nyt-history'])->assertExitCode(0);
@@ -231,7 +255,7 @@ class BookSeedNytHistoryTest extends TestCase
 
     public function test_429_stops_run_cleanly_with_cursor_and_unexhausted_metadata(): void
     {
-        // names + first page succeed, the second page is rate limited.
+        // The 'current' entry page succeeds, the second page is rate limited.
         $this->fakeHistory([
             'api.nytimes.com/svc/books/v3/lists/2025-01-03/picture-books.json*' => Http::response(['fault' => 'Rate limit quota violation'], 429),
         ]);
@@ -245,12 +269,12 @@ class BookSeedNytHistoryTest extends TestCase
         $this->assertSame('completed', $log->status);
         $this->assertFalse($log->metadata['exhausted']);
         $this->assertSame('picture-books|2025-01-03', $log->last_cursor);
-        $this->assertSame(3, $log->api_calls_used);
+        $this->assertSame(2, $log->api_calls_used);
     }
 
     public function test_non_429_failure_mid_run_fails_log_and_keeps_prior_page_work(): void
     {
-        // names + page 1 succeed; the page-2 fetch hits a server error.
+        // The 'current' entry page succeeds; the page-2 fetch hits a server error.
         $this->fakeHistory([
             'api.nytimes.com/svc/books/v3/lists/2025-01-03/picture-books.json*' => Http::response([], 500),
         ]);
@@ -264,26 +288,30 @@ class BookSeedNytHistoryTest extends TestCase
         $log = BookSyncLog::sole();
         $this->assertSame('failed', $log->status);
         $this->assertStringContainsString('NYT request failed (500)', (string) $log->error_message);
-        // Last checkpoint is the processed page 1 — --resume re-fetches it
+        // Last checkpoint is the processed page 1 (cursored at its REAL
+        // published_date, not the 'current' alias) — --resume re-fetches it
         // (harmless membership upsert) and walks on from its previous date.
         $this->assertSame('picture-books|2025-01-15', $log->last_cursor);
     }
 
-    public function test_empty_lists_names_fails_run_instead_of_completing_exhausted(): void
+    public function test_all_lists_unavailable_completes_exhausted_with_no_titles(): void
     {
-        // NYT 200 with no results array — must NOT look like a finished backfill.
+        // Every slug 404s at 'current' (e.g. NYT retires more lists): the
+        // run completes exhausted — one probe per HISTORY_LISTS slug, no
+        // failure, nothing seeded.
         Http::fake([
-            'api.nytimes.com/svc/books/v3/lists/names.json*' => Http::response(['status' => 'ERROR']),
+            'api.nytimes.com/*' => $this->listNotFound(),
         ]);
 
-        $this->artisan('book:seed', ['--source' => 'nyt-history'])->assertExitCode(1);
+        $this->artisan('book:seed', ['--source' => 'nyt-history'])->assertExitCode(0);
 
         $this->assertSame(0, BookLibraryTitle::count());
 
         $log = BookSyncLog::sole();
-        $this->assertSame('failed', $log->status);
-        $this->assertSame('NYT lists/names returned no lists', $log->error_message);
-        $this->assertSame(['/svc/books/v3/lists/names.json'], $this->nytPaths());
+        $this->assertSame('completed', $log->status);
+        $this->assertTrue($log->metadata['exhausted']);
+        $this->assertSame(count(NytClient::HISTORY_LISTS), $log->api_calls_used);
+        $this->assertCount(count(NytClient::HISTORY_LISTS), $this->nytPaths());
     }
 
     public function test_missing_api_key_exits_one_and_logs_failed_run(): void

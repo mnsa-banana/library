@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\BookLibrary;
 
 use App\Services\BookLibrary\NytClient;
+use App\Services\BookLibrary\NytListNotFoundException;
 use App\Services\BookLibrary\NytRateLimitedException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -94,15 +95,29 @@ class NytClientTest extends TestCase
         $this->assertCount(1, Http::recorded());
     }
 
+    public function test_404_throws_typed_list_not_found_without_retry(): void
+    {
+        Http::fake(['api.nytimes.com/*' => Http::response(['status' => 'ERROR', 'errors' => ['list not found']], 404)]);
+
+        try {
+            $this->client()->listForDate('chapter-books', '2026-01-01');
+            $this->fail('Expected NytListNotFoundException');
+        } catch (NytListNotFoundException $e) {
+            $this->assertStringContainsString('NYT list not found', $e->getMessage());
+        }
+
+        $this->assertCount(1, Http::recorded());
+    }
+
     public function test_other_4xx_fails_fast_without_retry(): void
     {
-        Http::fake(['api.nytimes.com/*' => Http::response([], 404)]);
+        Http::fake(['api.nytimes.com/*' => Http::response([], 403)]);
 
         try {
             $this->client()->listForDate('picture-books', '2026-01-01');
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('NYT request failed (404)', $e->getMessage());
+            $this->assertStringContainsString('NYT request failed (403)', $e->getMessage());
         }
 
         $this->assertCount(1, Http::recorded());

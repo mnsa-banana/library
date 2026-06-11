@@ -53,25 +53,6 @@ class NytClient
     ) {}
 
     /**
-     * Per-list date bounds from /lists/names.json — each list's history depth
-     * differs, so never assume a fixed start year.
-     *
-     * @return array<string, array{oldest_published_date: string, newest_published_date: string}>
-     */
-    public function listNames(): array
-    {
-        $names = [];
-        foreach ($this->get(self::BASE.'/lists/names.json')->json('results') ?? [] as $entry) {
-            $names[$entry['list_name_encoded']] = [
-                'oldest_published_date' => $entry['oldest_published_date'],
-                'newest_published_date' => $entry['newest_published_date'],
-            ];
-        }
-
-        return $names;
-    }
-
-    /**
      * One list page: /lists/{date}/{list}.json ('current' allowed as $date).
      * Returns the `results` object (published_date, previous_published_date,
      * books[]).
@@ -181,6 +162,14 @@ class NytClient
                 $this->backoff($attempt);
 
                 continue;
+            }
+
+            // NYT's gateway 404s with "list not found" for retired lists
+            // (the pre-2015 split slugs are gone entirely as of mid-2026,
+            // along with the /lists/names.json discovery endpoint). Typed
+            // so callers can skip a dead list instead of failing the run.
+            if ($response->status() === 404) {
+                throw new NytListNotFoundException("NYT list not found on {$url}");
             }
 
             throw new RuntimeException("NYT request failed ({$response->status()}) on {$url}");

@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Services\BookLibrary\CsmIndexScraper;
 use App\Services\BookLibrary\IngestService;
 use App\Services\BookLibrary\NytClient;
+use App\Services\BookLibrary\NytListNotFoundException;
 use App\Services\BookLibrary\NytRateLimitedException;
 use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use App\Services\BookLibrary\PluggedInIndexScraper;
@@ -276,27 +277,12 @@ class BookSeed extends Command
         [$resumeList, $resumeDate] = $this->nytResumePoint();
 
         return $this->runSeed('seed_nyt_history', 'nyt-history', function (SyncRun $run) use ($nyt, $ingest, $limit, $resumeList, $resumeDate) {
-            try {
-                $names = $nyt->listNames();
-            } catch (NytRateLimitedException) {
-                $run->bumpApiCalls();
-                $run->complete(['exhausted' => false]);
-                $this->warn('NYT rate limited on lists/names — rerun later.');
-
-                return self::SUCCESS;
-            }
-            $run->bumpApiCalls();
-
-            // NYT can 200 with no results; completing here would be
-            // indistinguishable from a finished backfill (exhausted=true).
-            if ($names === []) {
-                $run->fail('NYT lists/names returned no lists');
-                $this->error('NYT lists/names returned no lists.');
-
-                return self::FAILURE;
-            }
-
-            $calls = 1;
+            // No discovery call: NYT removed /lists/names.json (mid-2026).
+            // Each list's walk starts at 'current' and follows the
+            // previous_published_date chain; the chain ending (empty
+            // previous_published_date) is the history floor, and a 404
+            // ("list not found") marks a retired slug to skip.
+            $calls = 0;
             $pages = 0;
 
             $lists = NytClient::HISTORY_LISTS;
@@ -306,17 +292,9 @@ class BookSeed extends Command
             }
 
             foreach (array_slice($lists, (int) $start) as $offset => $list) {
-                $bounds = $names[$list] ?? null;
-                if ($bounds === null) {
-                    $this->warn("NYT lists/names has no entry for {$list}; skipping.");
+                $date = $offset === 0 && $resumeDate !== null ? $resumeDate : 'current';
 
-                    continue;
-                }
-
-                $oldest = $bounds['oldest_published_date'];
-                $date = $offset === 0 && $resumeDate !== null ? $resumeDate : $bounds['newest_published_date'];
-
-                while (is_string($date) && $date !== '' && $date >= $oldest) {
+                while (is_string($date) && $date !== '') {
                     if ($calls >= self::NYT_MAX_CALLS_PER_RUN) {
                         return $this->stopNytRun($run, "{$list}|{$date}", 'call budget reached');
                     }
@@ -330,6 +308,15 @@ class BookSeed extends Command
                         $run->bumpApiCalls();
 
                         return $this->stopNytRun($run, "{$list}|{$date}", 'NYT 429');
+                    } catch (NytListNotFoundException) {
+                        // Retired slug (pre-2015 split lists are gone from
+                        // the API) or a chain that walked past NYT's history
+                        // floor — skip to the next list.
+                        $run->bumpApiCalls();
+                        $calls++;
+                        $this->warn("NYT has no list '{$list}' at {$date}; skipping.");
+
+                        break;
                     }
                     $run->bumpApiCalls();
                     $calls++;
@@ -353,9 +340,11 @@ class BookSeed extends Command
 
                     // Resume-safety checkpoint after every page; re-fetching
                     // one already-processed page on --resume is harmless
-                    // (memberships upsert).
-                    $run->cursor("{$list}|{$date}");
-                    $this->info("Seeded {$list} {$date}.");
+                    // (memberships upsert). Cursor uses the page's REAL
+                    // published_date so a run stopped on the 'current' entry
+                    // page resumes from a stable date, not a moving alias.
+                    $run->cursor("{$list}|{$asOfDate}");
+                    $this->info("Seeded {$list} {$asOfDate}.");
 
                     $previous = $results['previous_published_date'] ?? null;
                     $date = is_string($previous) && $previous !== '' ? $previous : null;
