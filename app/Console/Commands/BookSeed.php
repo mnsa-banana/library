@@ -6,13 +6,14 @@ use App\Services\BookLibrary\CsmIndexScraper;
 use App\Services\BookLibrary\IngestService;
 use App\Services\BookLibrary\NytClient;
 use App\Services\BookLibrary\NytRateLimitedException;
+use App\Services\BookLibrary\PluggedInIndexScraper;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Console\Command;
 
 /**
  * Book-library seed entry point. Each `--source` is an independent arm with
  * its own sync_type, cursor format, and resume semantics; further arms
- * (pluggedin, wkar, award) land with later tasks.
+ * (wkar, award) land with later tasks.
  */
 class BookSeed extends Command
 {
@@ -20,16 +21,17 @@ class BookSeed extends Command
     private const NYT_MAX_CALLS_PER_RUN = 450;
 
     protected $signature = 'book:seed
-        {--source= : Seed source (csm|nyt-history)}
+        {--source= : Seed source (csm|pluggedin|nyt-history)}
         {--limit= : Maximum pages to fetch this run}
         {--resume : Continue from the last persisted cursor for this source}';
 
     protected $description = 'Seed the book library from a list source';
 
-    public function handle(NytClient $nyt, CsmIndexScraper $csm, IngestService $ingest): int
+    public function handle(NytClient $nyt, CsmIndexScraper $csm, PluggedInIndexScraper $pluggedin, IngestService $ingest): int
     {
         return match ($this->option('source')) {
             'csm' => $this->seedCsm($csm, $ingest),
+            'pluggedin' => $this->seedPluggedIn($pluggedin, $ingest),
             'nyt-history' => $this->seedNytHistory($nyt, $ingest),
             default => $this->invalidSource(),
         };
@@ -131,6 +133,79 @@ class BookSeed extends Command
 
             $run->complete(['exhausted' => true]);
             $this->info("CSM seed exhausted after {$processed} review pages.");
+
+            return self::SUCCESS;
+        });
+    }
+
+    /**
+     * Plugged In index seed — deliberately parallel to seedCsm (arm
+     * duplication over premature per-source restructuring): sitemap walk for
+     * the sorted /book-reviews/ URL list, then one polite fetch per review
+     * page for title/author (Plugged In's listing pages carry no authors and
+     * its pages no JSON-LD — title/author is all there is; dedup leans on the
+     * resolver). Cursor = last processed URL within the sorted list;
+     * `--resume` skips every URL ≤ cursor. A failed page fetch/parse is
+     * logged and skipped — never fatal.
+     */
+    private function seedPluggedIn(PluggedInIndexScraper $pluggedin, IngestService $ingest): int
+    {
+        $limit = $this->limitOption();
+        $cursor = $this->option('resume') ? SyncRun::lastCursor('seed_pluggedin') : null;
+
+        return $this->runSeed('seed_pluggedin', 'pluggedin', function (SyncRun $run) use ($pluggedin, $ingest, $limit, $cursor) {
+            $urls = $pluggedin->reviewUrls();
+
+            // A zero-URL walk would otherwise complete exhausted=true and be
+            // indistinguishable from a finished seed.
+            if ($urls === []) {
+                $run->fail('Plugged In sitemap walk returned no book-review URLs');
+                $this->error('Plugged In sitemap walk returned no book-review URLs.');
+
+                return self::FAILURE;
+            }
+
+            $processed = 0;
+            foreach ($urls as $url) {
+                if ($cursor !== null && $url <= $cursor) {
+                    continue;
+                }
+                if ($limit !== null && $processed >= $limit) {
+                    $run->complete(['exhausted' => false]);
+                    $this->warn('Stopped (--limit reached); cursor persisted — rerun with --resume.');
+
+                    return self::SUCCESS;
+                }
+
+                // api_calls counts review-page fetches; the (cheap, fixed)
+                // sitemap walk is untracked.
+                $meta = $pluggedin->reviewPageMeta($url);
+                $run->bumpApiCalls();
+                $processed++;
+
+                if ($meta === null) {
+                    // Already logged with detail by the scraper.
+                    $this->warn("Plugged In review page skipped (fetch/parse miss): {$url}");
+                } else {
+                    // Title/author/list fields only — Plugged In exposes no
+                    // ISBN and no machine-readable age (spec: no min_age).
+                    $ingest->ingest([
+                        'title' => $meta['title'],
+                        'author' => $meta['author'],
+                        'list_source' => 'pluggedin_index',
+                        'list_key' => 'index',
+                        'review_url' => $url,
+                    ], $run);
+                }
+
+                // Resume-safety checkpoint: persists immediately. Skipped
+                // pages advance it too — --resume must not re-grind a
+                // permanently broken page.
+                $run->cursor($url);
+            }
+
+            $run->complete(['exhausted' => true]);
+            $this->info("Plugged In seed exhausted after {$processed} review pages.");
 
             return self::SUCCESS;
         });
@@ -268,7 +343,7 @@ class BookSeed extends Command
 
     private function invalidSource(): int
     {
-        $this->error('Unknown --source. Available: csm, nyt-history.');
+        $this->error('Unknown --source. Available: csm, pluggedin, nyt-history.');
 
         return self::INVALID;
     }

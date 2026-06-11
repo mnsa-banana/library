@@ -1,0 +1,225 @@
+<?php
+
+namespace App\Services\BookLibrary;
+
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
+use SimpleXMLElement;
+
+/**
+ * Plugged In (Focus on the Family) review-index scraper (spec §Seed sources,
+ * pluggedin). Symmetrical with CsmIndexScraper: sitemap-driven URL discovery
+ * + per-review-page metadata fetch — Plugged In's listing pages carry NO
+ * authors, so the per-page fetch is the rule.
+ *
+ * Sitemap walk (verified live 2026-06-11): sitemap_index.xml is a Yoast
+ * per-post-type <sitemapindex> (post-, page-, movie-reviews-, tv-reviews-,
+ * book-reviews-, …). Book review URLs live exclusively in the
+ * book-reviews-sitemap*.xml children, so only those are fetched — the
+ * URL-level /book-reviews/ filter on every fetched child remains the source
+ * of truth. robots.txt allows the sitemaps and /book-reviews/ pages.
+ *
+ * Unlike CSM, review pages carry no JSON-LD book schema and no
+ * machine-readable age — metadata is title + author only, parsed from the
+ * Elementor post header (h1 + post-info byline) with an og:title fallback.
+ *
+ * Politeness: constructor-injected delay between requests (default 1000ms
+ * ≈ 1 req/s; 0 in tests); plain generic-browser UA, mirroring CSM.
+ */
+class PluggedInIndexScraper
+{
+    /** www host directly — the apex domain 301s every request to www. */
+    private const BASE = 'https://www.pluggedin.com';
+
+    /** Plain library/browser UA — never anything AI/bot-labeled. */
+    private const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36';
+
+    private bool $hasCalled = false;
+
+    public function __construct(private int $delayMs = 1000) {}
+
+    /**
+     * Walk sitemap_index.xml → book-reviews-sitemap*.xml and collect every
+     * slugged /book-reviews/ page URL. The slug requirement excludes the
+     * /book-reviews/ archive root, which the sitemap lists but which is a
+     * listing page, not a review (it would otherwise ingest a junk title).
+     *
+     * @return array<string> sorted unique review page URLs
+     */
+    public function reviewUrls(): array
+    {
+        $index = $this->fetchXml(self::BASE.'/sitemap_index.xml');
+
+        $urls = [];
+        foreach ($this->locs($index, 'sitemap') as $childUrl) {
+            // Child-name filter (documented choice): of Yoast's per-post-type
+            // children, only book-reviews-sitemap*.xml can contain
+            // /book-reviews/ URLs — verified live; the URL filter below still
+            // decides what is kept.
+            if (! str_contains($childUrl, 'book-reviews-sitemap')) {
+                continue;
+            }
+            foreach ($this->locs($this->fetchXml($childUrl), 'url') as $loc) {
+                if (preg_match('#/book-reviews/[^/]+#', $loc)) {
+                    $urls[] = $loc;
+                }
+            }
+        }
+
+        $urls = array_values(array_unique($urls));
+        sort($urls);
+
+        return $urls;
+    }
+
+    /**
+     * Fetch one review page and extract its book metadata — title + author
+     * only (no JSON-LD book schema, no ISBN, no machine-readable age on
+     * Plugged In pages). Title: the Elementor post-title h1, og:title
+     * fallback. Author: the post-info byline item right after the
+     * "Book Review" label. Connection error, non-200, or no parsable title
+     * → log + null (callers skip).
+     *
+     * @return array{title: string, author: ?string}|null
+     */
+    public function reviewPageMeta(string $url): ?array
+    {
+        try {
+            $response = $this->get($url);
+        } catch (ConnectionException $e) {
+            // Transient timeout/DNS blip on a single page must never kill a
+            // multi-hour run — log + skip, matching the non-200 path.
+            Log::warning('book-library: Plugged In review page connection failed', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (! $response->successful()) {
+            Log::warning('book-library: Plugged In review page fetch failed', [
+                'url' => $url,
+                'status' => $response->status(),
+            ]);
+
+            return null;
+        }
+
+        $html = $response->body();
+
+        $title = $this->h1Title($html) ?? $this->ogTitle($html);
+        if ($title === null) {
+            Log::warning('book-library: Plugged In review page carries no parsable title', ['url' => $url]);
+
+            return null;
+        }
+
+        return [
+            'title' => $title,
+            'author' => $this->bylineAuthor($html),
+        ];
+    }
+
+    /** First h1 — the Elementor theme-post-title widget (one h1 per page). */
+    private function h1Title(string $html): ?string
+    {
+        if (! preg_match('#<h1[^>]*>(.*?)</h1>#si', $html, $m)) {
+            return null;
+        }
+
+        $title = trim(html_entity_decode(strip_tags($m[1]), ENT_QUOTES | ENT_HTML5));
+
+        return $title === '' ? null : $title;
+    }
+
+    /** og:title — carries the bare post title on review pages (no site chrome). */
+    private function ogTitle(string $html): ?string
+    {
+        if (! preg_match('#<meta[^>]+property=["\']og:title["\'][^>]*content=("|\')(.*?)\1#i', $html, $m)
+            && ! preg_match('#<meta[^>]+content=("|\')(.*?)\1[^>]*property=["\']og:title["\']#i', $html, $m)) {
+            return null;
+        }
+
+        $title = trim(html_entity_decode($m[2], ENT_QUOTES | ENT_HTML5));
+
+        return $title === '' ? null : $title;
+    }
+
+    /**
+     * Author from the Elementor post-info byline. Verified live 2026-06-11
+     * across old and new reviews, the type-custom items run in a fixed
+     * order: "Book Review" label, author, age band, publisher, awards, year
+     * — so the author is the item immediately after the label. Pages
+     * without the label (or with nothing after it) yield null; positional
+     * guessing without the label would risk ingesting publisher/age text.
+     */
+    private function bylineAuthor(string $html): ?string
+    {
+        preg_match_all(
+            '#<span[^>]*class=["\'][^"\']*elementor-post-info__item--type-custom[^"\']*["\'][^>]*>(.*?)</span>#si',
+            $html,
+            $matches
+        );
+
+        $items = array_map(
+            fn (string $text) => trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5)),
+            $matches[1]
+        );
+
+        foreach ($items as $i => $text) {
+            if (strcasecmp($text, 'Book Review') === 0) {
+                $author = $items[$i + 1] ?? '';
+
+                return $author === '' ? null : $author;
+            }
+        }
+
+        return null;
+    }
+
+    /** Sitemap fetches are foundational — non-200/unparsable XML is fatal. */
+    private function fetchXml(string $url): SimpleXMLElement
+    {
+        $response = $this->get($url);
+        if (! $response->successful()) {
+            throw new RuntimeException("Plugged In sitemap request failed ({$response->status()}) on {$url}");
+        }
+
+        libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($response->body(), SimpleXMLElement::class, LIBXML_NONET);
+        libxml_clear_errors();
+        if ($xml === false) {
+            throw new RuntimeException("Plugged In sitemap is not parsable XML: {$url}");
+        }
+
+        return $xml;
+    }
+
+    /** @return array<string> trimmed <loc> texts of the given child element */
+    private function locs(SimpleXMLElement $xml, string $child): array
+    {
+        $locs = [];
+        foreach ($xml->{$child} as $entry) {
+            $loc = trim((string) $entry->loc);
+            if ($loc !== '') {
+                $locs[] = $loc;
+            }
+        }
+
+        return $locs;
+    }
+
+    private function get(string $url): Response
+    {
+        if ($this->hasCalled && $this->delayMs > 0) {
+            usleep($this->delayMs * 1000);
+        }
+        $this->hasCalled = true;
+
+        return Http::withHeaders(['User-Agent' => self::UA])->timeout(30)->get($url);
+    }
+}
