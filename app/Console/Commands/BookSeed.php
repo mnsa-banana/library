@@ -58,7 +58,9 @@ class BookSeed extends Command
     /** Normalized --limit: null when absent, never negative. */
     private function limitOption(): ?int
     {
-        return $this->option('limit') !== null ? max(0, (int) $this->option('limit')) : null;
+        $limit = $this->option('limit');
+
+        return $limit !== null ? max(0, (int) $limit) : null;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Services\BookLibrary;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -78,13 +79,26 @@ class CsmIndexScraper
      * (schema.org Review → itemReviewed) is primary: name, author.name,
      * isbn (ONE arbitrary edition, often hyphenated — normalized to
      * digits-only), typicalAgeRange ("7+" → 7). og:title is the title
-     * fallback. Non-200 or no parsable title → log + null (callers skip).
+     * fallback. Connection error, non-200, or no parsable title → log + null
+     * (callers skip).
      *
      * @return array{title: string, author: ?string, min_age: ?int, isbn13s: array<string>}|null
      */
     public function reviewPageMeta(string $url): ?array
     {
-        $response = $this->get($url);
+        try {
+            $response = $this->get($url);
+        } catch (ConnectionException $e) {
+            // Transient timeout/DNS blip on a single page must never kill a
+            // multi-hour run — log + skip, matching the non-200 path.
+            Log::warning('book-library: CSM review page connection failed', [
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
         if (! $response->successful()) {
             Log::warning('book-library: CSM review page fetch failed', [
                 'url' => $url,
@@ -186,7 +200,7 @@ class CsmIndexScraper
         }
 
         libxml_use_internal_errors(true);
-        $xml = simplexml_load_string($response->body());
+        $xml = simplexml_load_string($response->body(), SimpleXMLElement::class, LIBXML_NONET);
         libxml_clear_errors();
         if ($xml === false) {
             throw new RuntimeException("CSM sitemap is not parsable XML: {$url}");

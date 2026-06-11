@@ -8,6 +8,8 @@ use App\Models\BookSyncLog;
 use App\Services\BookLibrary\CsmIndexScraper;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -107,6 +109,12 @@ class BookSeedCsmTest extends TestCase
             '/reviews/sitemap.xml',
             '/reviews/sitemap.xml?page=1',
         ], $this->csmPaths());
+
+        // UA regression insurance: CSM blocks AI-labeled agents site-wide —
+        // every request must carry a plain generic-browser UA.
+        $plainUa = fn (Request $request) => str_starts_with((string) ($request->header('User-Agent')[0] ?? ''), 'Mozilla/5.0');
+        Http::assertSent($plainUa);
+        Http::assertNotSent(fn (Request $request) => ! $plainUa($request));
     }
 
     public function test_review_page_meta_parses_json_ld_with_normalized_isbn_and_age(): void
@@ -249,6 +257,26 @@ class BookSeedCsmTest extends TestCase
         $this->assertSame(2, $log->titles_processed);
         // The skipped URL still advances the cursor — --resume must not
         // re-grind a permanently broken page.
+        $this->assertSame(self::BASE.'/book-reviews/the-wild-robot', $log->last_cursor);
+    }
+
+    public function test_connection_error_on_review_page_is_skipped_not_fatal(): void
+    {
+        $this->fakeCsm([
+            self::BASE.'/book-reviews/charlottes-web' => fn () => throw new ConnectionException('cURL error 28: timed out'),
+        ]);
+
+        $this->artisan('book:seed', ['--source' => 'csm'])->assertExitCode(0);
+
+        // The unreachable page is skipped; the other two still land.
+        $this->assertSame(2, BookLibraryTitle::count());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('completed', $log->status);
+        $this->assertTrue($log->metadata['exhausted']);
+        $this->assertSame(3, $log->api_calls_used);
+        $this->assertSame(2, $log->titles_processed);
+        // Skipped pages advance the cursor, exactly like the non-200 path.
         $this->assertSame(self::BASE.'/book-reviews/the-wild-robot', $log->last_cursor);
     }
 
