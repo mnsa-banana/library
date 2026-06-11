@@ -54,7 +54,7 @@ class StreamingVerifyKids extends Command
         try {
             $session = $client->probeSession();
             if (($session['country'] ?? null) !== 'US' || ! ($session['is_kids'] ?? false)
-                || empty($session['auth_url']) || empty($session['shakti_url']) || empty($session['app_version'])) {
+                || empty($session['auth_url']) || empty($session['member_api_url']) || empty($session['app_version'])) {
                 $this->abort('not a US Kids session (country='.($session['country'] ?? 'null').', is_kids='.var_export($session['is_kids'] ?? null, true).')');
 
                 return null;
@@ -79,11 +79,11 @@ class StreamingVerifyKids extends Command
 
             // maturity path: distinguish "endpoint dead" from "ceiling misconfigured"
             $anchorLevels = array_filter(
-                $client->maturityLevels(array_keys(self::ANCHORS_IN), $session['shakti_url'], $session['auth_url']),
+                $client->maturityLevels(array_keys(self::ANCHORS_IN), $session['member_api_url'], $session['auth_url']),
                 fn ($l) => $l !== null
             );
             if (count($anchorLevels) === 0) {
-                $this->abort('maturity endpoint returned no data for anchors — shakti/auth likely rotated');
+                $this->abort('maturity endpoint returned no data for anchors — member API/auth likely rotated');
 
                 return null;
             }
@@ -159,7 +159,7 @@ class StreamingVerifyKids extends Command
         $bar->start();
         try {
             $levels = $client->maturityLevels(
-                $nfids, $session['shakti_url'], $session['auth_url'],
+                $nfids, $session['member_api_url'], $session['auth_url'],
                 fn (int $done, int $total) => $bar->setProgress(min($done, $total))
             );
         } catch (\Throwable $e) {

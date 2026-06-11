@@ -10,12 +10,23 @@ use RuntimeException;
 class NetflixKidsClient
 {
     private const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
-        . '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+        .'(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
     private const GRAPHQL_URL = 'https://web.prod.cloud.netflix.com/graphql';
 
+    /**
+     * The falcor pathEvaluator lives under the nodequark member API (scraped from the /Kids
+     * page's "memberapi" config; the legacy /api/shakti/* alias was retired 2026-06-11) and
+     * rejects requests with HTTP 412 unless this original_path query param is present.
+     */
+    private const PATH_EVALUATOR_ORIGINAL_PATH = '/shakti/mre/pathEvaluator';
+
     private string $cookie;
+
     private int $retryTimes;
+
     private int $retrySleepMs;
+
     private ?array $searchTemplate = null;
 
     public function __construct()
@@ -59,7 +70,7 @@ class NetflixKidsClient
                     }
                     $last = 'non-JSON 2xx body';
                 } else {
-                    $last = 'HTTP ' . $resp->status();
+                    $last = 'HTTP '.$resp->status();
                 }
             } catch (ConnectionException $e) {
                 $last = $e->getMessage();
@@ -72,7 +83,7 @@ class NetflixKidsClient
     }
 
     /** @param int[] $netflixIds @return array<int,int|null> id => maturityLevel */
-    public function maturityLevels(array $netflixIds, string $shaktiUrl, string $authUrl, ?callable $onBatch = null): array
+    public function maturityLevels(array $netflixIds, string $memberApiUrl, string $authUrl, ?callable $onBatch = null): array
     {
         $out = [];
         foreach (array_chunk($netflixIds, 48) as $chunk) {
@@ -85,21 +96,24 @@ class NetflixKidsClient
                 ->withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
                 ->timeout(30)
                 ->withBody(
-                    http_build_query($form) . '&' . implode('&', array_map(
-                        fn ($p) => 'path=' . urlencode($p), $paths
+                    http_build_query($form).'&'.implode('&', array_map(
+                        fn ($p) => 'path='.urlencode($p), $paths
                     )),
                     'application/x-www-form-urlencoded'
                 )
-                ->post(rtrim($shaktiUrl, '/') . '/pathEvaluator?method=call'));
+                ->post(rtrim($memberApiUrl, '/').'/pathEvaluator?original_path='
+                    .rawurlencode(self::PATH_EVALUATOR_ORIGINAL_PATH)));
 
-            $videos = $resp->json('value.videos', []);
+            // falcor jsonGraph response: maturity is an atom whose payload sits under 'value'
+            $videos = $resp->json('jsonGraph.videos', []);
             foreach ($chunk as $id) {
-                $out[$id] = $videos[(string) $id]['maturity']['rating']['maturityLevel'] ?? null;
+                $out[$id] = $videos[(string) $id]['maturity']['value']['rating']['maturityLevel'] ?? null;
             }
             if ($onBatch) {
                 $onBatch(count($out), count($netflixIds));
             }
         }
+
         return $out;
     }
 
@@ -113,6 +127,7 @@ class NetflixKidsClient
                 'version' => (int) config('services.netflix_kids.persisted_query_version'),
             ]];
         }
+
         return $this->searchTemplate;
     }
 
@@ -133,10 +148,10 @@ class NetflixKidsClient
             'Origin' => 'https://www.netflix.com',
             'Referer' => 'https://www.netflix.com/Kids/search',
         ])->timeout(30)
-          ->withBody(json_encode($body), 'application/json')
-          ->post(self::GRAPHQL_URL));
+            ->withBody(json_encode($body), 'application/json')
+            ->post(self::GRAPHQL_URL));
 
-        return (bool) preg_match('/"videoId":' . $netflixId . '\b/', $resp->body());
+        return (bool) preg_match('/"videoId":'.$netflixId.'\b/', $resp->body());
     }
 
     /** Fetch /Kids and scrape session facts. */
@@ -153,14 +168,20 @@ class NetflixKidsClient
 
         $country = $grab('/"currentCountry":"([A-Z]{2})"/') ?? $grab('/"countryOfSignup":"([A-Z]{2})"/');
         $auth = $grab('/"authURL":"([^"]+)"/');
-        $api = $grab('/"apiUrl":"([^"]+shakti[^"]*)"/');
         $build = $grab('/"BUILD_IDENTIFIER":"([^"]+)"/');
+
+        $memberApi = null;
+        if (preg_match('/"memberapi":\{([^{}]*)\}/', $body, $m)
+            && preg_match('/"hostname":"([^"]+)"/', $m[1], $host)
+            && preg_match('/"path":\["([^"]+)"/', $m[1], $path)) {
+            $memberApi = 'https://'.$host[1].$this->unescape($path[1]);
+        }
 
         return [
             'country' => $country,
             'is_kids' => str_contains($body, 'container-kids') || str_contains($body, '"isKidsProfile":true'),
             'auth_url' => $auth ? $this->unescape($auth) : null,
-            'shakti_url' => $api ? $this->unescape($api) : null,
+            'member_api_url' => $memberApi,
             'app_version' => $build,
         ];
     }

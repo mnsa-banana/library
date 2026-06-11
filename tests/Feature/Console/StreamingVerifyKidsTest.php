@@ -41,7 +41,7 @@ class StreamingVerifyKidsTest extends TestCase
     {
         Http::fake([
             'www.netflix.com/Kids' => Http::response($kidsHtml, 200),
-            '*pathEvaluator*' => Http::response(['value' => ['videos' => $maturity]], 200),
+            '*pathEvaluator*' => Http::response(['jsonGraph' => ['videos' => $maturity]], 200),
             'web.prod.cloud.netflix.com/graphql' => function ($request) use ($searchByTerm) {
                 $term = json_decode($request->body(), true)['variables']['searchTerm'] ?? '';
                 $ids = $searchByTerm[$term] ?? [];
@@ -56,15 +56,23 @@ class StreamingVerifyKidsTest extends TestCase
     {
         return '<body data-uia="container-kids">"currentCountry":"US",'
             .'"authURL":"auth","apiUrl":"https:\x2F\x2Fwww.netflix.com\x2Fapi\x2Fshakti\x2Fmre",'
+            .'"memberapi":{"protocol":"https","hostname":"www.netflix.com",'
+            .'"path":["/nq/website/memberapi/release"],"isNodequark":true},'
             .'"BUILD_IDENTIFIER":"v6c030968"</body>';
+    }
+
+    /** jsonGraph atom shape returned by the member API pathEvaluator. */
+    private static function maturityAtom(int $level): array
+    {
+        return ['maturity' => ['$type' => 'atom', 'value' => ['rating' => ['maturityLevel' => $level]]]];
     }
 
     private function anchorMaturity(): array
     {
         return [
-            '81009946' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
-            '81474560' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
-            '70153373' => ['maturity' => ['rating' => ['maturityLevel' => 70]]],
+            '81009946' => self::maturityAtom(41),
+            '81474560' => self::maturityAtom(50),
+            '70153373' => self::maturityAtom(70),
         ];
     }
 
@@ -87,9 +95,9 @@ class StreamingVerifyKidsTest extends TestCase
         $this->fakeNetflix(
             $this->goodKidsHtml(),
             $this->anchorMaturity() + [
-                '683101' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
-                '70153373' => ['maturity' => ['rating' => ['maturityLevel' => 70]]],
-                '70143836' => ['maturity' => ['rating' => ['maturityLevel' => 110]]],
+                '683101' => self::maturityAtom(50),
+                '70153373' => self::maturityAtom(70),
+                '70143836' => self::maturityAtom(110),
             ],
             $this->anchorSearch() + [
                 'Land Before Time' => [683101],
@@ -165,12 +173,12 @@ class StreamingVerifyKidsTest extends TestCase
         $this->seedTitle('t-bad', 'Broken Toon', '666');
         Http::fake([
             'www.netflix.com/Kids' => Http::response($this->goodKidsHtml(), 200),
-            '*pathEvaluator*' => Http::response(['value' => ['videos' => [
-                '81009946' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
-                '81474560' => ['maturity' => ['rating' => ['maturityLevel' => 50]]],
-                '70153373' => ['maturity' => ['rating' => ['maturityLevel' => 70]]],
-                '555' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
-                '666' => ['maturity' => ['rating' => ['maturityLevel' => 41]]],
+            '*pathEvaluator*' => Http::response(['jsonGraph' => ['videos' => [
+                '81009946' => self::maturityAtom(41),
+                '81474560' => self::maturityAtom(50),
+                '70153373' => self::maturityAtom(70),
+                '555' => self::maturityAtom(41),
+                '666' => self::maturityAtom(41),
             ]]], 200),
             'web.prod.cloud.netflix.com/graphql' => function ($request) {
                 $term = json_decode($request->body(), true)['variables']['searchTerm'] ?? '';
