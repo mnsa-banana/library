@@ -130,6 +130,31 @@ class BookSeedPluggedInTest extends TestCase
         ], $meta);
     }
 
+    public function test_review_page_meta_skips_roundup_pages_with_placeholder_byline(): void
+    {
+        // Roundup/listicle posts ("10 Family-Friendly Picture Books from
+        // 2008") live in the book-reviews sitemap but review no single book
+        // — their post-info byline carries the literal placeholder "None"
+        // (and "Unknown" for the later items) where a real review carries
+        // the book's author. The page must be skipped entirely: its h1 is
+        // an article headline, not a book title.
+        Http::fake([
+            self::BASE.'/book-reviews/0010-family-friendly-picture-books-2008/' => Http::response(
+                '<!DOCTYPE html><html><head></head><body>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Book Review</span>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">None</span>'
+                .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Unknown</span>'
+                .'<h1 class="elementor-heading-title elementor-size-default">10 Family-Friendly Picture Books from 2008</h1>'
+                .'</body></html>'
+            ),
+        ]);
+
+        $meta = (new PluggedInIndexScraper(delayMs: 0))
+            ->reviewPageMeta(self::BASE.'/book-reviews/0010-family-friendly-picture-books-2008/');
+
+        $this->assertNull($meta);
+    }
+
     public function test_review_page_meta_falls_back_to_og_title_when_h1_missing(): void
     {
         Http::fake([

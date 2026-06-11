@@ -34,6 +34,13 @@ class PluggedInIndexScraper
     /** www host directly — the apex domain 301s every request to www. */
     private const BASE = 'https://www.pluggedin.com';
 
+    /**
+     * Literal byline placeholders that mark roundup/listicle posts — pages
+     * in the book-reviews sitemap that review no single book fill the
+     * post-info author slot with these instead of an author name.
+     */
+    private const PLACEHOLDER_BYLINES = ['none', 'unknown', 'n/a'];
+
     /** Plain library/browser UA — never anything AI/bot-labeled. */
     private const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36';
 
@@ -118,9 +125,26 @@ class PluggedInIndexScraper
             return null;
         }
 
+        $candidate = $this->bylineAuthorCandidate($html);
+        if ($candidate !== null && in_array(strtolower($candidate), self::PLACEHOLDER_BYLINES, true)) {
+            // Roundup/listicle posts ("10 Family-Friendly Picture Books from
+            // 2008") live in the book-reviews sitemap but review no single
+            // book — their post-info byline carries literal placeholders
+            // ("None"/"Unknown") where a real review carries the book's
+            // author. The h1 on such a page is an article headline, not a
+            // book title, so skip the page entirely.
+            Log::info('book-library: Plugged In page has a placeholder byline (roundup, not a review) — skipped', ['url' => $url]);
+
+            return null;
+        }
+
+        $author = $candidate === null || $candidate === '' || preg_match('/^\d/', $candidate)
+            ? null
+            : $candidate;
+
         return [
             'title' => $title,
-            'author' => $this->bylineAuthor($html),
+            'author' => $author,
         ];
     }
 
@@ -157,14 +181,15 @@ class PluggedInIndexScraper
      * without the label (or with nothing after it) yield null; positional
      * guessing without the label would risk ingesting publisher/age text.
      *
-     * Digit guard: when the author item is missing the next item is the age
-     * band ("8 to 12", "12 years old and up") or a year — no real author
-     * starts with a digit, so digit-leading candidates yield null. A wrong
-     * author here would survive normalization and poison work resolution
-     * (Plugged In has no ISBN to rescue dedup); a null author back-fills
-     * correctly via the resolver's null-author path.
+     * Returns the RAW candidate ('' when the label has no following item,
+     * null when the label is absent). The caller applies the guards: the
+     * placeholder check (roundup pages — skip entirely) and the digit guard
+     * (when the author item is missing the next item is the age band
+     * "8 to 12" or a year — no real author starts with a digit; a wrong
+     * author would survive normalization and poison work resolution, while
+     * a null author back-fills via the resolver's null-author path).
      */
-    private function bylineAuthor(string $html): ?string
+    private function bylineAuthorCandidate(string $html): ?string
     {
         preg_match_all(
             '#<span[^>]*class=["\'][^"\']*elementor-post-info__item--type-custom[^"\']*["\'][^>]*>(.*?)</span>#si',
@@ -179,9 +204,7 @@ class PluggedInIndexScraper
 
         foreach ($items as $i => $text) {
             if (strcasecmp($text, 'Book Review') === 0) {
-                $author = $items[$i + 1] ?? '';
-
-                return $author === '' || preg_match('/^\d/', $author) ? null : $author;
+                return $items[$i + 1] ?? '';
             }
         }
 
