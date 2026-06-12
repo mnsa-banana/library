@@ -40,6 +40,9 @@ class NetflixAvailabilityController extends Controller
      * Base query for distinct, imdb-identified, currently-tracked US Netflix
      * subscription titles. Shared by the full set and the Kids subset so the
      * two can't drift.
+     *
+     * Note: DB::table() bypasses the StreamingTitle model's SoftDeletes scope,
+     * so we guard explicitly with whereNull to exclude soft-deleted rows.
      */
     private function netflixUsQuery(): Builder
     {
@@ -49,6 +52,7 @@ class NetflixAvailabilityController extends Controller
             ->where('sto.region', 'US')
             ->where('sto.type', 'subscription')
             ->whereNotNull('st.imdb_id')
-            ->where('st.imdb_id', '!=', '');
+            ->where('st.imdb_id', '!=', '')
+            ->whereNull('st.deleted_at');
     }
 }

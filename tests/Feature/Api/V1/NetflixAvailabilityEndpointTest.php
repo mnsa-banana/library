@@ -44,6 +44,48 @@ class NetflixAvailabilityEndpointTest extends TestCase
             ]);
     }
 
+    public function test_soft_deleted_titles_are_excluded_from_availability(): void
+    {
+        DB::table('streaming_services')->insert(['id' => 'netflix', 'name' => 'Netflix']);
+        DB::table('streaming_titles')->insert([
+            ['id' => 1, 'imdb_id' => 'tt0000010', 'title' => 'Live', 'show_type' => 'movie', 'netflix_kids_surfaced' => true, 'deleted_at' => null],
+            ['id' => 2, 'imdb_id' => 'tt0000020', 'title' => 'Deleted', 'show_type' => 'movie', 'netflix_kids_surfaced' => true, 'deleted_at' => now()],
+        ]);
+        DB::table('streaming_title_offers')->insert([
+            ['title_id' => 1, 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription', 'link' => ''],
+            ['title_id' => 2, 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription', 'link' => ''],
+        ]);
+
+        $this->withToken('mnsa-token')
+            ->getJson('/api/v1/netflix/availability')
+            ->assertOk()
+            ->assertExactJson([
+                'imdb_ids' => ['tt0000010'],
+                'kids_imdb_ids' => ['tt0000010'],
+            ]);
+    }
+
+    public function test_duplicate_imdb_ids_appear_exactly_once(): void
+    {
+        DB::table('streaming_services')->insert(['id' => 'netflix', 'name' => 'Netflix']);
+        DB::table('streaming_titles')->insert([
+            ['id' => 'a', 'imdb_id' => 'tt9999999', 'title' => 'DupA', 'show_type' => 'movie', 'netflix_kids_surfaced' => false],
+            ['id' => 'b', 'imdb_id' => 'tt9999999', 'title' => 'DupB', 'show_type' => 'movie', 'netflix_kids_surfaced' => false],
+        ]);
+        DB::table('streaming_title_offers')->insert([
+            ['title_id' => 'a', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription', 'link' => ''],
+            ['title_id' => 'b', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription', 'link' => ''],
+        ]);
+
+        $this->withToken('mnsa-token')
+            ->getJson('/api/v1/netflix/availability')
+            ->assertOk()
+            ->assertExactJson([
+                'imdb_ids' => ['tt9999999'],
+                'kids_imdb_ids' => [],
+            ]);
+    }
+
     public function test_excludes_non_subscription_non_us_and_imdbless_offers(): void
     {
         DB::table('streaming_services')->insert([
