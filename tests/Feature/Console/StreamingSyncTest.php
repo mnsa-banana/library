@@ -19,8 +19,6 @@ class StreamingSyncTest extends TestCase
             'services.streaming_availability.base_url' => 'https://api.streaming.test/v4',
             'services.streaming_availability.qps' => 0,
             'services.streaming_availability.timeout' => 5,
-            'services.mnsa.base_url' => 'https://mnsa.test',
-            'services.mnsa.service_token' => 'test-token',
         ]);
     }
 
@@ -76,7 +74,7 @@ class StreamingSyncTest extends TestCase
                     : ['changes' => [], 'shows' => [], 'hasMore' => false], 200);
             }
 
-            // push-availability (MNSA) and anything else — benign success.
+            // Anything else — benign success.
             return Http::response(['matched' => 0, 'marked_true' => 0, 'marked_false' => 0,
                 'kids_marked_true' => 0, 'kids_marked_false' => 0], 200);
         });
@@ -161,19 +159,6 @@ class StreamingSyncTest extends TestCase
         $this->assertNotNull($offer->expires_on);
         $this->assertSame(9999, Carbon::parse($offer->expires_on)->year,
             'sentinel expiry should be clamped to the max parseable year');
-    }
-
-    public function test_does_not_push_availability_itself(): void
-    {
-        $this->cfg();
-        DB::table('streaming_services')->insert(['id' => 'netflix', 'name' => 'Netflix']);
-        $this->fakeChanges();
-
-        $this->artisan('streaming:sync', ['--hours' => 72])->assertSuccessful();
-
-        // The MNSA push belongs to streaming:update as its final pipeline step;
-        // sync pushing too would hit MNSA twice per run.
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'mnsa.test'));
     }
 
     public function test_rejects_invalid_hours_before_doing_any_work(): void
