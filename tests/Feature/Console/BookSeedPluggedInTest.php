@@ -418,4 +418,29 @@ class BookSeedPluggedInTest extends TestCase
         $pages = array_filter($this->pluggedInPaths(), fn (string $p) => str_starts_with($p, '/book-reviews/'));
         $this->assertSame([], $pages);
     }
+
+    public function test_byline_min_age_ignores_bands_beyond_the_byline_window(): void
+    {
+        // An age band rendered by an unrelated widget far below the byline
+        // (e.g. a related-reviews card) must not be grafted onto this book.
+        $items = '<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Book Review</span>'
+            .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Gary Paulsen</span>'
+            .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Simon and Schuster</span>'
+            .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Newbery Honor</span>'
+            .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">1987</span>'
+            .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">Adventure</span>'
+            .'<span class="elementor-icon-list-text elementor-post-info__item elementor-post-info__item--type-custom">5 to 7</span>';
+        Http::fake([
+            self::BASE.'/book-reviews/windowed/' => Http::response(
+                '<!DOCTYPE html><html><body>'.$items
+                .'<h1 class="elementor-heading-title elementor-size-default">Windowed</h1>'
+                .'</body></html>'
+            ),
+        ]);
+
+        $meta = (new PluggedInIndexScraper(delayMs: 0))->reviewPageMeta(self::BASE.'/book-reviews/windowed/');
+
+        $this->assertSame('Windowed', $meta['title']);
+        $this->assertNull($meta['min_age']);
+    }
 }

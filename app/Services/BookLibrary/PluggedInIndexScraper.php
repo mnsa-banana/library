@@ -164,7 +164,10 @@ class PluggedInIndexScraper
             if (strcasecmp($text, 'Book Review') !== 0) {
                 continue;
             }
-            foreach (array_slice($items, $i + 1) as $candidate) {
+            // Bounded to the byline run right after the label (author, age
+            // band, publisher, awards, year) — a page-wide scan could graft
+            // an age band from a related-reviews card lower on the page.
+            foreach (array_slice($items, $i + 1, 5) as $candidate) {
                 if (preg_match('/^(\d{1,2})\s*(?:to\s*\d{1,2}|years?\s*old\s*and\s*up|and\s*up|\+)$/i', $candidate, $m)) {
                     return (int) $m[1];
                 }

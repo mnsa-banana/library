@@ -4,7 +4,6 @@
 .env.backup
 .env.bak.*
 .env.production
-/mnsa-landing-copy.local.json
 .phpactor.json
 .phpunit.result.cache
 /.fleet
@@ -25,10 +24,7 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 frontend/node_modules
-frontend/dist
-frontend/.expo
 frontend/*.tsbuildinfo
-title_id_map.csv
 .superpowers/
 .claude/
 /docs/

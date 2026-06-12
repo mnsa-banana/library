@@ -1,7 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# imbuo-parent — Laravel API + server-rendered MNSA Blade landing + the React SPA
-# (built here and served as static assets by Laravel). Used by Railway via
-# railway.json (builder: DOCKERFILE).
+# sponge-kids — Laravel API + the React SPA (built here and served as static
+# assets by Laravel). Used by Railway via railway.json (builder: DOCKERFILE).
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: build the React SPA (frontend/) → public/build/ ─────────────────

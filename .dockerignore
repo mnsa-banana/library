@@ -11,8 +11,6 @@
 vendor
 node_modules
 frontend/node_modules
-frontend/dist
-frontend/.expo
 public/build
 public/hot
 public/storage
@@ -21,7 +19,6 @@ bootstrap/cache/*.php
 # Local-only env + data — never bake these into the image.
 .env
 .env.*
-mnsa-landing-copy.local.json
 
 # Logs, caches, junk.
 storage/logs/*
@@ -32,9 +29,6 @@ storage/framework/views/*
 .DS_Store
 .phpunit.result.cache
 .phpunit.cache
-
-# Big local artifact (not needed in the image).
-title_id_map.csv
 
 # Docs / dev-only stuff.
 docs

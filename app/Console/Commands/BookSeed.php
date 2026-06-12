@@ -40,6 +40,15 @@ class BookSeed extends Command
 
     public function handle(NytClient $nyt, CsmIndexScraper $csm, PluggedInIndexScraper $pluggedin, IngestService $ingest): int
     {
+        if ($this->option('delta') && $this->option('resume')) {
+            // A delta recomputes "new" from the DB on every run — resuming
+            // one is meaningless, and the inherited cursor would silently
+            // skip every new URL sorting at or below it.
+            $this->error('--delta and --resume are mutually exclusive (a delta re-derives newness each run).');
+
+            return self::INVALID;
+        }
+
         return match ($this->option('source')) {
             'csm' => $this->seedCsm($csm, $ingest),
             'pluggedin' => $this->seedPluggedIn($pluggedin, $ingest),
@@ -56,6 +65,16 @@ class BookSeed extends Command
      * part — runs only for genuinely NEW reviews. A weekly delta is minutes;
      * metadata refreshes for already-known pages (e.g. after changing what
      * gets extracted) still require a full walk without the flag.
+     *
+     * Known cost: pages that never yield a membership (roundup posts, parse
+     * misses, resolver-ambiguous titles) have no row to key on and are
+     * re-fetched every delta run — dozens of URLs ≈ seconds at the
+     * politeness rate, accepted in lieu of a per-URL skip ledger.
+     *
+     * Delta runs never persist a cursor (see the guards at the call sites):
+     * SyncRun::lastCursor is per sync_type, so a delta cursor on a newer row
+     * would shadow an interrupted FULL walk's resume point and make
+     * --resume skip the unwalked gap.
      */
     private function deltaFilter(array $urls, string $listSource): array
     {
@@ -189,8 +208,12 @@ class BookSeed extends Command
 
                 // Resume-safety checkpoint: persists immediately. Skipped
                 // pages advance it too — --resume must not re-grind a
-                // permanently broken page.
-                $run->cursor($url);
+                // permanently broken page. Delta runs persist NO cursor:
+                // it would shadow a full walk's resume point (lastCursor is
+                // per sync_type) and a delta needs no resume anyway.
+                if (! $this->option('delta')) {
+                    $run->cursor($url);
+                }
                 $lastProcessed = $url;
             }
 
@@ -292,8 +315,12 @@ class BookSeed extends Command
 
                 // Resume-safety checkpoint: persists immediately. Skipped
                 // pages advance it too — --resume must not re-grind a
-                // permanently broken page.
-                $run->cursor($url);
+                // permanently broken page. Delta runs persist NO cursor:
+                // it would shadow a full walk's resume point (lastCursor is
+                // per sync_type) and a delta needs no resume anyway.
+                if (! $this->option('delta')) {
+                    $run->cursor($url);
+                }
                 $lastProcessed = $url;
             }
 
@@ -368,7 +395,11 @@ class BookSeed extends Command
                     $calls++;
                     $pages++;
 
-                    $asOfDate = $results['published_date'] ?? $date;
+                    $pd = $results['published_date'] ?? null;
+                    // Guard '' as well as null: cursoring "{list}|" would
+                    // make a later --resume silently skip the whole list
+                    // (nytResumePoint would hand back an empty resume date).
+                    $asOfDate = is_string($pd) && $pd !== '' ? $pd : $date;
                     try {
                         foreach ($results['books'] ?? [] as $book) {
                             $item = NytClient::ingestItem($book, $list, $asOfDate);
@@ -547,7 +578,12 @@ class BookSeed extends Command
             return [null, null];
         }
 
-        return explode('|', $cursor, 2);
+        [$list, $date] = explode('|', $cursor, 2);
+
+        // An empty resume date must mean "start the list from 'current'",
+        // never "skip the list" (the walk's while-guard treats '' as
+        // chain-end).
+        return [$list, $date === '' ? null : $date];
     }
 
     /** Clean stop (budget / --limit / 429): cursor persisted, completed, exhausted=false. */
@@ -578,6 +614,15 @@ class BookSeed extends Command
      */
     private function stopOnOpenLibraryRateLimit(SyncRun $run, string $url, ?string $lastProcessed, ?string $inheritedCursor): int
     {
+        if ($this->option('delta')) {
+            // No cursor for delta runs (see deltaFilter docblock) — the next
+            // delta recomputes the remaining new URLs from the DB.
+            $run->complete(['exhausted' => false]);
+            $this->warn("Stopped (Open Library 429) before {$url}; rerun the delta later.");
+
+            return self::SUCCESS;
+        }
+
         $run->cursor($lastProcessed ?? $inheritedCursor ?? '');
         $run->complete(['exhausted' => false]);
         $this->warn("Stopped (Open Library 429) before {$url}; cursor persisted — rerun with --resume.");

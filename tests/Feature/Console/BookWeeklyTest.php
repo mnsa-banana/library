@@ -177,4 +177,31 @@ class BookWeeklyTest extends TestCase
         $this->assertSame('0 9 * * 4', $events->first()->expression);
         $this->assertTrue($events->first()->withoutOverlapping);
     }
+
+    public function test_retired_list_is_skipped_not_fatal(): void
+    {
+        // NYT removed whole list slugs in mid-2026; a retired CURRENT list
+        // must be skipped (warn + continue) so the weekly sync — and the
+        // book:update pipeline that fail-fasts on its exit code — keeps
+        // syncing the remaining lists.
+        $this->fakeCurrentLists([
+            'api.nytimes.com/svc/books/v3/lists/current/picture-books.json*' => Http::response(
+                ['status' => 'ERROR', 'errors' => ['list not found']], 404
+            ),
+        ]);
+
+        $this->artisan('book:weekly')->assertExitCode(0);
+
+        $paths = collect(Http::recorded())
+            ->map(fn (array $pair) => $pair[0]->url())
+            ->filter(fn (string $url) => str_contains($url, 'api.nytimes.com'))
+            ->map(fn (string $url) => parse_url($url, PHP_URL_PATH))
+            ->values()
+            ->all();
+        $this->assertContains('/svc/books/v3/lists/current/childrens-middle-grade-hardcover.json', $paths);
+        $this->assertContains('/svc/books/v3/lists/current/series-books.json', $paths);
+
+        $log = \App\Models\BookSyncLog::orderByDesc('id')->first();
+        $this->assertSame('completed', $log->status);
+    }
 }

@@ -520,4 +520,22 @@ class BookSeedCsmTest extends TestCase
         $this->assertTrue($log->metadata['delta']);
         $this->assertTrue($log->metadata['exhausted']);
     }
+
+    public function test_delta_persists_no_cursor_and_rejects_resume(): void
+    {
+        // A delta cursor on a newer seed_csm row would shadow an interrupted
+        // FULL walk's resume point (lastCursor is per sync_type) and make
+        // --resume skip the unwalked gap.
+        BookListMembership::factory()->create([
+            'list_source' => 'csm_index',
+            'review_url' => self::BASE.'/book-reviews/a-wrinkle-in-time',
+        ]);
+        $this->fakeCsm();
+
+        $this->artisan('book:seed', ['--source' => 'csm', '--delta' => true])->assertExitCode(0);
+        $this->assertNull(BookSyncLog::orderByDesc('id')->first()->last_cursor);
+
+        $this->artisan('book:seed', ['--source' => 'csm', '--delta' => true, '--resume' => true])
+            ->assertExitCode(2);
+    }
 }

@@ -144,18 +144,23 @@ class CsmIndexScraper
             }
 
             $nodes = $decoded['@graph'] ?? (array_is_list($decoded) ? $decoded : [$decoded]);
+            $book = null;
             foreach ($nodes as $node) {
-                if (is_array($node) && is_array($node['itemReviewed'] ?? null)) {
-                    $book = $node['itemReviewed'];
-                    // CSM puts typicalAgeRange ("3+") on the REVIEW node, not
-                    // the Book node it reviews — graft it onto the returned
-                    // book array (book-node value wins if both ever exist).
-                    if (! isset($book['typicalAgeRange']) && isset($node['typicalAgeRange'])) {
-                        $book['typicalAgeRange'] = $node['typicalAgeRange'];
-                    }
-
-                    return $book;
+                if (! is_array($node) || ! is_array($node['itemReviewed'] ?? null)) {
+                    continue;
                 }
+                $book ??= $node['itemReviewed'];
+                // CSM puts typicalAgeRange ("3+") on the REVIEW node, not
+                // the Book node it reviews — graft it onto the returned book
+                // array (book-node value wins; keep scanning sibling review
+                // nodes so a preceding age-less node can't shadow the one
+                // carrying the range).
+                if (! isset($book['typicalAgeRange']) && isset($node['typicalAgeRange'])) {
+                    $book['typicalAgeRange'] = $node['typicalAgeRange'];
+                }
+            }
+            if ($book !== null) {
+                return $book;
             }
         }
 
@@ -192,6 +197,10 @@ class CsmIndexScraper
     /** CSM's typicalAgeRange shape is "7+" → 7; anything else → null. */
     private function minAge(mixed $range): ?int
     {
+        if (is_array($range)) {
+            // schema.org allows list values — take the first usable entry.
+            $range = $range[0] ?? null;
+        }
         if (is_string($range) && preg_match('/^\s*(\d{1,2})/', $range, $m)) {
             return (int) $m[1];
         }

@@ -18,12 +18,14 @@ class BookUpdate extends Command
     /**
      * Held for the lifetime of a run so scheduled and manual invocations
      * cannot overlap. The TTL only matters when the process dies without
-     * reaching the finally block; deltas are minutes, so 6h clears any
-     * stale lock well before the next daily slot.
+     * reaching the finally block. Deltas are normally minutes, but a delta
+     * against an unseeded source degenerates to a full politeness-paced
+     * walk (hours) — 12h (matching streaming:update) keeps the lock alive
+     * through that worst case while still clearing before the next day.
      */
     private const LOCK_NAME = 'book:update';
 
-    private const LOCK_TTL_SECONDS = 60 * 60 * 6;
+    private const LOCK_TTL_SECONDS = 60 * 60 * 12;
 
     protected $signature = 'book:update';
 

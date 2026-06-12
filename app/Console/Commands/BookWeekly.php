@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\BookLibrary\IngestService;
 use App\Services\BookLibrary\NytClient;
+use App\Services\BookLibrary\NytListNotFoundException;
 use App\Services\BookLibrary\NytRateLimitedException;
 use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use App\Services\BookLibrary\SyncRun;
@@ -32,6 +33,15 @@ class BookWeekly extends Command
             foreach (NytClient::CURRENT_LISTS as $list) {
                 try {
                     $results = $nyt->listForDate($list, 'current');
+                } catch (NytListNotFoundException) {
+                    // Retired slug (NYT removed the pre-2015 lists wholesale
+                    // in mid-2026 — a current list could go the same way):
+                    // skip it and keep syncing the remaining lists instead
+                    // of failing the weekly run (and book:update) forever.
+                    $run->bumpApiCalls();
+                    $this->warn("NYT has no list '{$list}' — skipped.");
+
+                    continue;
                 } catch (NytRateLimitedException) {
                     $run->bumpApiCalls();
                     $run->cursor("{$list}|current");
