@@ -2,15 +2,13 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     public function run(): void
     {
-        $this->call(ElioReportSeeder::class);
+        // Real data arrives via pg_dump restore from sponge-kids (one-time seed)
+        // and thereafter only via the cron pipelines.
     }
 }

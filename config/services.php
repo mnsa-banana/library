@@ -79,13 +79,6 @@ return [
         'key' => env('GOOGLE_BOOKS_API_KEY'),
     ],
 
-    'revenuecat' => [
-        'entitlement_id' => env('REVENUECAT_ENTITLEMENT_ID', 'Sponge Kids Pro'),
-        'secret_key' => env('REVENUECAT_SECRET_KEY'),
-        'purchase_link_url' => env('REVENUECAT_PURCHASE_LINK_URL'),
-        'customer_center_url_pattern' => env('REVENUECAT_CUSTOMER_CENTER_URL', 'https://pay.rev.cat/customer/{appUserId}'),
-    ],
-
     'mnsa' => [
         'base_url' => env('MNSA_BASE_URL'),
         'service_token' => env('MNSA_SERVICE_TOKEN'),

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\VerifyReadToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -16,19 +17,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // https URL generation, and secure cookies work.
         $middleware->trustProxies(at: '*');
 
-        $middleware->api(prepend: [
-            \Illuminate\Http\Middleware\HandleCors::class,
-            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-        ]);
-
         $middleware->alias([
-            'subscribed' => \App\Http\Middleware\EnsureSubscribed::class,
+            'verify.read-token' => VerifyReadToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // /api/* always gets a JSON error response (incl. a 401 for an
-        // unauthenticated request) — never a redirect to the (nonexistent) login
-        // route, which would 500.
+        // /api/* always gets a JSON error response — never a redirect.
         $exceptions->shouldRenderJsonWhen(
             fn ($request, $e) => $request->is('api/*') || $request->expectsJson()
         );
