@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\BookListMembership;
 use App\Services\BookLibrary\CsmIndexScraper;
 use App\Services\BookLibrary\IngestService;
 use App\Services\BookLibrary\NytClient;
@@ -32,7 +33,8 @@ class BookSeed extends Command
         {--source= : Seed source (csm|pluggedin|nyt-history|wkar|award)}
         {--file= : Path to a structured JSON import file (wkar|award)}
         {--limit= : Maximum pages/entries to process this run}
-        {--resume : Continue from the last persisted cursor for this source}';
+        {--resume : Continue from the last persisted cursor for this source}
+        {--delta : csm|pluggedin only — fetch review pages for NEW urls only (incremental update)}';
 
     protected $description = 'Seed the book library from a list source';
 
@@ -46,6 +48,28 @@ class BookSeed extends Command
             'award' => $this->seedAward($ingest),
             default => $this->invalidSource(),
         };
+    }
+
+    /**
+     * Delta mode (--delta): drop URLs that already carry a membership row for
+     * this source, so the per-page fetch — the expensive, politeness-paced
+     * part — runs only for genuinely NEW reviews. A weekly delta is minutes;
+     * metadata refreshes for already-known pages (e.g. after changing what
+     * gets extracted) still require a full walk without the flag.
+     */
+    private function deltaFilter(array $urls, string $listSource): array
+    {
+        if (! $this->option('delta')) {
+            return $urls;
+        }
+
+        $known = BookListMembership::query()
+            ->where('list_source', $listSource)
+            ->whereNotNull('review_url')
+            ->pluck('review_url')
+            ->flip();
+
+        return array_values(array_filter($urls, fn (string $url) => ! isset($known[$url])));
     }
 
     /**
@@ -100,6 +124,16 @@ class BookSeed extends Command
                 $this->error('CSM sitemap walk returned no book-review URLs.');
 
                 return self::FAILURE;
+            }
+
+            // Delta runs AFTER the zero-walk check: an empty raw walk is a
+            // broken sitemap (fail), an empty delta is a healthy no-op.
+            $urls = $this->deltaFilter($urls, 'csm_index');
+            if ($urls === []) {
+                $run->complete(['exhausted' => true, 'delta' => true]);
+                $this->info('CSM delta: no new review pages.');
+
+                return self::SUCCESS;
             }
 
             $processed = 0;
@@ -192,6 +226,16 @@ class BookSeed extends Command
                 $this->error('Plugged In sitemap walk returned no book-review URLs.');
 
                 return self::FAILURE;
+            }
+
+            // Delta runs AFTER the zero-walk check: an empty raw walk is a
+            // broken sitemap (fail), an empty delta is a healthy no-op.
+            $urls = $this->deltaFilter($urls, 'pluggedin_index');
+            if ($urls === []) {
+                $run->complete(['exhausted' => true, 'delta' => true]);
+                $this->info('Plugged In delta: no new review pages.');
+
+                return self::SUCCESS;
             }
 
             $processed = 0;

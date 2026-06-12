@@ -483,4 +483,41 @@ class BookSeedCsmTest extends TestCase
         $this->assertSame('failed', $log->status);
         $this->assertSame('CSM sitemap walk returned no book-review URLs', $log->error_message);
     }
+
+    public function test_delta_fetches_only_new_review_pages(): void
+    {
+        foreach (['a-wrinkle-in-time', 'the-wild-robot'] as $slug) {
+            BookListMembership::factory()->create([
+                'list_source' => 'csm_index',
+                'review_url' => self::BASE."/book-reviews/{$slug}",
+            ]);
+        }
+        $this->fakeCsm();
+
+        $this->artisan('book:seed', ['--source' => 'csm', '--delta' => true])->assertExitCode(0);
+
+        $pages = array_values(array_filter($this->csmPaths(), fn (string $p) => str_starts_with($p, '/book-reviews/')));
+        $this->assertSame(['/book-reviews/charlottes-web'], $pages);
+    }
+
+    public function test_delta_with_no_new_urls_is_a_clean_no_op(): void
+    {
+        foreach (['a-wrinkle-in-time', 'charlottes-web', 'the-wild-robot'] as $slug) {
+            BookListMembership::factory()->create([
+                'list_source' => 'csm_index',
+                'review_url' => self::BASE."/book-reviews/{$slug}",
+            ]);
+        }
+        $this->fakeCsm();
+
+        $this->artisan('book:seed', ['--source' => 'csm', '--delta' => true])->assertExitCode(0);
+
+        $pages = array_filter($this->csmPaths(), fn (string $p) => str_starts_with($p, '/book-reviews/'));
+        $this->assertSame([], $pages);
+
+        $log = BookSyncLog::orderByDesc('id')->first();
+        $this->assertSame('completed', $log->status);
+        $this->assertTrue($log->metadata['delta']);
+        $this->assertTrue($log->metadata['exhausted']);
+    }
 }

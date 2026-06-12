@@ -386,4 +386,36 @@ class BookSeedPluggedInTest extends TestCase
         $this->assertSame('failed', $log->status);
         $this->assertSame('Plugged In sitemap walk returned no book-review URLs', $log->error_message);
     }
+
+    public function test_delta_fetches_only_new_review_pages(): void
+    {
+        foreach (['bravely', 'higher-power-of-lucky'] as $slug) {
+            BookListMembership::factory()->create([
+                'list_source' => 'pluggedin_index',
+                'review_url' => self::BASE."/book-reviews/{$slug}/",
+            ]);
+        }
+        $this->fakePluggedIn();
+
+        $this->artisan('book:seed', ['--source' => 'pluggedin', '--delta' => true])->assertExitCode(0);
+
+        $pages = array_values(array_filter($this->pluggedInPaths(), fn (string $p) => str_starts_with($p, '/book-reviews/')));
+        $this->assertSame(['/book-reviews/freedom-train-the-story-of-harriet-tubman/'], $pages);
+    }
+
+    public function test_delta_with_no_new_urls_is_a_clean_no_op(): void
+    {
+        foreach (['bravely', 'freedom-train-the-story-of-harriet-tubman', 'higher-power-of-lucky'] as $slug) {
+            BookListMembership::factory()->create([
+                'list_source' => 'pluggedin_index',
+                'review_url' => self::BASE."/book-reviews/{$slug}/",
+            ]);
+        }
+        $this->fakePluggedIn();
+
+        $this->artisan('book:seed', ['--source' => 'pluggedin', '--delta' => true])->assertExitCode(0);
+
+        $pages = array_filter($this->pluggedInPaths(), fn (string $p) => str_starts_with($p, '/book-reviews/'));
+        $this->assertSame([], $pages);
+    }
 }
