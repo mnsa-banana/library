@@ -24,7 +24,7 @@ class StreamingUpdate extends Command
 
     protected $signature = 'streaming:update {--hours=72 : Lookback window in hours for the sync step}';
 
-    protected $description = 'Run the full streaming refresh pipeline (sync → enrich → verify-kids → push-availability), fail-fast.';
+    protected $description = 'Run the full streaming refresh pipeline (sync → enrich → verify-kids), fail-fast.';
 
     public function handle(): int
     {
@@ -121,7 +121,6 @@ class StreamingUpdate extends Command
             ['streaming:sync', ['--hours' => $hours]],
             ['streaming:enrich', []],
             ['streaming:verify-kids', []],
-            ['streaming:push-availability', []],
         ];
     }
 

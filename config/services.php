@@ -79,10 +79,4 @@ return [
         'key' => env('GOOGLE_BOOKS_API_KEY'),
     ],
 
-    'mnsa' => [
-        'base_url' => env('MNSA_BASE_URL'),
-        'service_token' => env('MNSA_SERVICE_TOKEN'),
-        'http_timeout' => (int) env('MNSA_HTTP_TIMEOUT', 30),
-    ],
-
 ];

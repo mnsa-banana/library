@@ -16,7 +16,7 @@ class StreamingUpdateTest extends TestCase
     private array $calls = [];
 
     /**
-     * Replace the four real pipeline sub-commands with closure stubs that record
+     * Replace the three real pipeline sub-commands with closure stubs that record
      * their invocation order and return a scripted exit code. Overriding by name
      * shadows the real commands, so the orchestration is tested without real APIs.
      *
@@ -37,7 +37,7 @@ class StreamingUpdateTest extends TestCase
             return $failCodes['streaming:sync'] ?? 0;
         });
 
-        foreach (['streaming:enrich', 'streaming:verify-kids', 'streaming:push-availability'] as $name) {
+        foreach (['streaming:enrich', 'streaming:verify-kids'] as $name) {
             Artisan::command($name, function () use (&$calls, $name, $failCodes, $throwSteps) {
                 $calls[] = $name;
 
@@ -60,7 +60,6 @@ class StreamingUpdateTest extends TestCase
             'streaming:sync:48',
             'streaming:enrich',
             'streaming:verify-kids',
-            'streaming:push-availability',
         ], $this->calls);
     }
 
@@ -96,7 +95,8 @@ class StreamingUpdateTest extends TestCase
             'streaming:enrich',
             'streaming:verify-kids',
         ], $this->calls);
-        $this->assertNotContains('streaming:push-availability', $this->calls);
+        $this->assertSame('streaming:verify-kids', end($this->calls));
+        $this->assertCount(3, $this->calls);
 
         $log = StreamingSyncLog::where('sync_type', 'pipeline')->sole();
         $this->assertSame('failed', $log->status);
@@ -115,7 +115,8 @@ class StreamingUpdateTest extends TestCase
             'streaming:enrich',
             'streaming:verify-kids',
         ], $this->calls);
-        $this->assertNotContains('streaming:push-availability', $this->calls);
+        $this->assertSame('streaming:verify-kids', end($this->calls));
+        $this->assertCount(3, $this->calls);
 
         $log = StreamingSyncLog::where('sync_type', 'pipeline')->sole();
         $this->assertSame('failed', $log->status);
