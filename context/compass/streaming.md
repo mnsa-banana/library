@@ -17,7 +17,6 @@
 - `app/Console/Commands/StreamingUpdate.php` — orchestrator chaining the four pipeline steps fail-fast (`streaming:update`); the only command scheduled daily
 - `routes/console.php` — schedule: `streaming:update` daily 03:00, `streaming:refresh-services` monthly
 - `app/Services/StreamingAvailability/Client.php` — HTTP wrapper, retries 429/5xx + connection timeouts, configurable QPS throttle and request timeout
-- `app/Services/StreamingAvailability/CatalogService.php` — read-side grouping/dedup for `/streaming` endpoint
 - `app/Services/StreamingAvailability/TmdbEnricher.php` — TMDB pass for us_certification + trailer fallback
 - `config/services.php` — `streaming_availability` block (api_key, base_url, qps)
 
@@ -65,5 +64,4 @@
 **Env vars:** `STREAMING_AVAILABILITY_API_KEY` (required), `STREAMING_AVAILABILITY_BASE_URL` (default https://api.movieofthenight.com/v4), `STREAMING_AVAILABILITY_QPS` (default 5), `TMDB_API_KEY` (for enrichment only).
 
 ## See Also
-- `docs/superpowers/specs/2026-04-29-streaming-availability-migration-design.md` — original design doc
-- `docs/superpowers/plans/2026-04-29-streaming-availability-migration.md` — implementation plan
+- The original design spec and implementation plan live in the sponge-kids repo's local docs/ tree (gitignored; not referenced by path here)

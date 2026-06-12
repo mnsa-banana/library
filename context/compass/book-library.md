@@ -168,4 +168,4 @@ lower quota; the key is appended only when configured).
 
 ## See Also
 - `database/data/book_library/awards/README.md`, `.../wkar/README.md` — import file authoring
-- `docs/superpowers/specs/2026-06-10-book-library-source-design.md` + `docs/superpowers/plans/2026-06-10-book-library-source.md` — design spec and plan
+- The original design spec and implementation plan live in the sponge-kids repo's local docs/ tree (gitignored; not referenced by path here)
