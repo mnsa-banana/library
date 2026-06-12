@@ -47,6 +47,9 @@ class BookEnrich extends Command
                 ->orderBy('id')
                 ->pluck('id');
 
+            $total = $ids->count();
+            $this->info("Enriching {$total} rows...");
+
             foreach ($ids as $id) {
                 if ($limit !== null && $processed >= $limit) {
                     return $this->stopRun($run, '--limit reached');
@@ -61,6 +64,8 @@ class BookEnrich extends Command
                 if ($row === null) {
                     continue;
                 }
+
+                $this->line(sprintf('[%d/%d] %s', $processed + 1, $total, $row->title));
 
                 try {
                     $calls += $this->openLibraryPass($row, $openLibrary, $run);
