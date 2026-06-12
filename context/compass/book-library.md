@@ -167,6 +167,5 @@ fails), `GOOGLE_BOOKS_API_KEY` (optional — Google Books works keyless at a
 lower quota; the key is appended only when configured).
 
 ## See Also
-- `context/compass/data-contract.md` — how these tables sit beside reports/streaming
 - `database/data/book_library/awards/README.md`, `.../wkar/README.md` — import file authoring
-- Admin repo `docs/superpowers/specs/2026-06-10-book-library-source-design.md` + `docs/superpowers/plans/2026-06-10-book-library-source.md` — design spec and plan
+- `docs/superpowers/specs/2026-06-10-book-library-source-design.md` + `docs/superpowers/plans/2026-06-10-book-library-source.md` — design spec and plan

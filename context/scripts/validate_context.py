@@ -12,12 +12,10 @@ COMPASS_DIR = REPO_ROOT / "context" / "compass"
 STALE_DAYS = 30
 
 EXPECTED_DIRS = [
-    "app/Http/Controllers",
     "app/Models",
     "app/Services",
     "app/Console/Commands",
     "database/migrations",
-    "frontend/src",
     "routes",
 ]
 

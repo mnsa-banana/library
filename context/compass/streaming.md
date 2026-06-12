@@ -2,7 +2,7 @@
 > Last validated: 2026-06-11
 
 ## Quick Commands
-- Full daily pipeline: `php artisan streaming:update` (sync → enrich → verify-kids → push-availability, fail-fast)
+- Full daily pipeline: `php artisan streaming:update` (sync → enrich → verify-kids, fail-fast)
 - Check status: `php artisan streaming:status`
 - Refresh service catalog: `php artisan streaming:refresh-services`
 - Initial backfill: `php artisan streaming:backfill`
@@ -12,7 +12,6 @@
 
 ## Key Files
 - `app/Console/Commands/StreamingRefreshServices.php`, `StreamingBackfill.php`, `StreamingSync.php`, `StreamingEnrich.php`, `StreamingStatus.php`, `StreamingSmoke.php` — 6 artisan commands
-- `app/Console/Commands/StreamingPushAvailability.php` — POSTs the full Netflix-US imdb_id set + Kids subset to MNSA (`streaming:push-availability`)
 - `app/Console/Commands/StreamingVerifyKids.php` — verifies which US Netflix titles surface in the Kids profile, sets `netflix_kids_surfaced` (`streaming:verify-kids`)
 - `app/Services/NetflixKids/NetflixKidsClient.php` — scrapes the /Kids page for session facts (auth, member API base, build id), runs the GraphQL Kids search and the falcor maturity lookups
 - `app/Console/Commands/StreamingUpdate.php` — orchestrator chaining the four pipeline steps fail-fast (`streaming:update`); the only command scheduled daily
@@ -49,7 +48,7 @@
 
 **Sync window is 72 hours, not 24.** `streaming:sync` covers a 72-hour overlap so a missed daily run self-heals on the next run.
 
-**`streaming:update` is the only scheduled daily job; it runs the four steps fail-fast.** Order is sync → enrich → verify-kids → push-availability; the first non-zero exit (or thrown exception, mapped to exit 1) stops the chain and `streaming:update` returns that code (remaining steps skipped). Only `--hours` is forwarded (to `sync`, default 72, validated 1–720 — exit 2 consistently means invalid input, in `streaming:sync` too). The command holds a 12h cache lock for the duration of a run so scheduled and manual invocations can't overlap (a second run exits 1 immediately; the database cache store needs the `cache`/`cache_locks` tables from the 2026_06_10 migration). Each run writes a `streaming_sync_log` row with `sync_type='pipeline'`, so failed pipelines surface in `streaming:status`. Consequence: when the Netflix Kids cookie is stale, the daily run fails at `verify-kids` and **push-availability does not run** — on_netflix_us/on_netflix_kids in MNSA stay at their last-pushed values until the cookie is refreshed and the job re-runs. The individual sub-commands are still runnable standalone for targeted re-runs (e.g. `streaming:verify-kids --force`). The MNSA push happens only via this pipeline step (or by running `streaming:push-availability` directly) — `streaming:sync` does not push itself, so a standalone sync run leaves MNSA untouched until the next pipeline run.
+**`streaming:update` is the only scheduled daily job; it runs three steps fail-fast.** Order is sync → enrich → verify-kids; the first non-zero exit (or thrown exception, mapped to exit 1) stops the chain and `streaming:update` returns that code (remaining steps skipped). Only `--hours` is forwarded (to `sync`, default 72, validated 1–720 — exit 2 consistently means invalid input, in `streaming:sync` too). The command holds a 12h cache lock for the duration of a run so scheduled and manual invocations can't overlap (a second run exits 1 immediately; the database cache store needs the `cache`/`cache_locks` tables from the 2026_06_10 migration). Each run writes a `streaming_sync_log` row with `sync_type='pipeline'`, so failed pipelines surface in `streaming:status`. Consequence: when the Netflix Kids cookie is stale, the daily run fails at `verify-kids`. The individual sub-commands are still runnable standalone for targeted re-runs (e.g. `streaming:verify-kids --force`).
 
 **Netflix maturity lookups go through the nodequark member API, not the legacy shakti URL.** Netflix retired `/api/shakti/{id}/pathEvaluator` on 2026-06-11 (404; the build-id form 421s). `NetflixKidsClient::probeSession()` scrapes the `"memberapi"` config object from the /Kids page (`https://www.netflix.com/nq/website/memberapi/release`) and `maturityLevels()` POSTs to `{base}/pathEvaluator?original_path=/shakti/mre/pathEvaluator` — the `original_path` param is mandatory (412 without it). The response is falcor jsonGraph: `jsonGraph.videos.{id}.maturity.value.rating.maturityLevel` (maturity is an atom; the old shape was `value.videos.{id}.maturity.rating.…`). The page still advertises the dead shakti URL under `"apiUrl"` — don't scrape that. If Netflix rotates again, the verify-kids session gate aborts loudly before any write.
 
@@ -59,8 +58,6 @@
 
 **Both backfill and sync bump PHP memory to 512M.** `/shows/search/filters` and `/changes` responses include full show payloads (cast, directors, streamingOptions, imageSet variants). PHP's allocator high-water mark accumulates across hundreds of paginated requests and the 128M default OOMs partway through large catalogs (Prime, Tubi). Both commands also call `DB::connection()->disableQueryLog()` so query history doesn't pile up either.
 
-**`streaming:push-availability` derives Kids as a strict subset of the full set.** Both the full Netflix-US imdb_id list and the `kids_imdb_ids` subset are built from a shared `netflixUsQuery()` helper — the Kids query simply adds `.where('st.netflix_kids_surfaced', true)`. This guarantees the Kids list can never contain IDs absent from the full list. `netflix_kids_surfaced` is populated by the separate `streaming:verify-kids` command.
-
 **Reports link by imdb_id/tmdb_id only.** No FK between `reports` and `streaming_titles`. CatalogService matches by IMDB first, then TMDB+tmdb_type. A report with no matching streaming_title returns empty groups.
 
 **Smoke fixture for TV is Chernobyl, not The Office.** `streaming:smoke` uses `tv/87108` (Chernobyl, 5 episodes, ~1MB response) instead of The Office, which returns ~49MB of episode-level JSON and exhausts PHP's 512MB memory limit.
@@ -68,7 +65,5 @@
 **Env vars:** `STREAMING_AVAILABILITY_API_KEY` (required), `STREAMING_AVAILABILITY_BASE_URL` (default https://api.movieofthenight.com/v4), `STREAMING_AVAILABILITY_QPS` (default 5), `TMDB_API_KEY` (for enrichment only).
 
 ## See Also
-- `context/compass/data-contract.md` — how reports relate to streaming_titles
-- `context/compass/api-and-auth.md` — the streaming endpoint that serves this data
 - `docs/superpowers/specs/2026-04-29-streaming-availability-migration-design.md` — original design doc
 - `docs/superpowers/plans/2026-04-29-streaming-availability-migration.md` — implementation plan
