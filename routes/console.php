@@ -24,3 +24,13 @@ Schedule::command('book:weekly')->weeklyOn(4, '09:00')->withoutOverlapping();
 // enrich pending library rows via Open Library + Google Books. Self-budgeting
 // (900-call ceiling, quota-stop) and naturally resumable via enriched_at.
 Schedule::command('book:enrich')->weeklyOn(4, '10:00')->withoutOverlapping();
+
+// TEMPORARY backfill (added 2026-06-13): the library was seeded ~9% enriched
+// and the NYT history list isn't in yet. Run daily right after the 03:00
+// streaming sync to chew through the backlog — book:seed resumes from its
+// cursor, book:enrich resumes via enriched_at and self-budgets per run, so a
+// few days of runs catch everything up. appendOutputTo routes the summary to
+// the container log (Railway captures PID 1 stdout). Remove these two once
+// `book:status` shows the library fully enriched and nyt-history seeded.
+Schedule::command('book:seed --source=nyt-history --resume')->dailyAt('04:00')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
+Schedule::command('book:enrich')->dailyAt('04:30')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
