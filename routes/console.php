@@ -8,10 +8,12 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// Daily: full refresh pipeline — sync → enrich → verify-kids (fail-fast).
-// Overlap protection lives in the command itself (cache lock in StreamingUpdate::handle()),
-// so manual recovery runs and this schedule share the same guard.
-Schedule::command('streaming:update')->dailyAt('03:00');
+// Daily nightly sequence runs at 1am PST (09:00 UTC) onward — after Google
+// Books' midnight-Pacific quota reset, so book:enrich gets a fresh quota.
+// 1. Streaming refresh pipeline (sync → enrich → verify-kids, fail-fast).
+//    Overlap protection is a cache lock in StreamingUpdate::handle(), shared
+//    with manual recovery runs.
+Schedule::command('streaming:update')->dailyAt('09:00');
 
 // Monthly: refresh streaming service catalog
 Schedule::command('streaming:refresh-services')->monthlyOn(1, '02:00');
@@ -25,12 +27,13 @@ Schedule::command('book:weekly')->weeklyOn(4, '09:00')->withoutOverlapping();
 // (900-call ceiling, quota-stop) and naturally resumable via enriched_at.
 Schedule::command('book:enrich')->weeklyOn(4, '10:00')->withoutOverlapping();
 
-// TEMPORARY backfill (added 2026-06-13): the library was seeded ~9% enriched
-// and the NYT history list isn't in yet. Run daily right after the 03:00
-// streaming sync to chew through the backlog — book:seed resumes from its
-// cursor, book:enrich resumes via enriched_at and self-budgets per run, so a
-// few days of runs catch everything up. appendOutputTo routes the summary to
-// the container log (Railway captures PID 1 stdout). Remove these two once
-// `book:status` shows the library fully enriched and nyt-history seeded.
-Schedule::command('book:seed --source=nyt-history --resume')->dailyAt('04:00')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
-Schedule::command('book:enrich')->dailyAt('04:30')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
+// 2. + 3. TEMPORARY backfill (added 2026-06-13): library was seeded ~9%
+// enriched and the NYT history list isn't in yet. Daily, sequenced after the
+// 09:00 streaming sync — seed first (resumes from its cursor), then enrich
+// (resumes via enriched_at, self-budgets ~900 calls/run). book:enrich at
+// 10:00 UTC = ~3h after Google Books' midnight-Pacific quota reset. A few days
+// of runs catch everything up. appendOutputTo routes the summary to the
+// container log. Remove these two once `book:status` shows fully enriched and
+// nyt-history seeded.
+Schedule::command('book:seed --source=nyt-history --resume')->dailyAt('09:30')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
+Schedule::command('book:enrich')->dailyAt('10:00')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
