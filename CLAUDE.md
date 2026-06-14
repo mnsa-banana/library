@@ -29,6 +29,20 @@ Railway project `imbuo-library`: `web` service (read API), `scheduler` service
 (`php artisan schedule:work`), Postgres. Consumers use the generated
 `*.up.railway.app` hostname over HTTPS — no custom domain.
 
+## Git remotes
+
+This repo lives in **two GitHub accounts** and every push must reach both:
+
+- `tdikun/imbuo-library` (primary, `origin` fetch)
+- `mnsa-banana/library` (mirror; named remote `mnsa`)
+
+`origin` is configured with two push URLs, so a plain **`git push`** mirrors to
+both automatically — always push via `origin` (or `git push --all` style to
+origin), never push to only one. The `mnsa-banana/library` URL uses the `github-mnsa` SSH
+host alias (`~/.ssh/config`) so it authenticates with the mnsa-banana key.
+Verify with `git remote -v`: `origin` should list one fetch URL and **two**
+push URLs.
+
 ## Context
 
 `context/compass/streaming.md` and `context/compass/book-library.md` carry the
