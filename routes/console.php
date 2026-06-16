@@ -37,3 +37,9 @@ Schedule::command('book:enrich')->weeklyOn(4, '10:00')->withoutOverlapping();
 // nyt-history seeded.
 Schedule::command('book:seed --source=nyt-history --resume')->dailyAt('09:30')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
 Schedule::command('book:enrich')->dailyAt('10:00')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
+
+// Daily ops health digest — emails the night's run summary at 11:00 UTC, after
+// the latest nightly job (book:enrich, ~10:22) finishes. Reads the sync-log
+// tables only. Watch-list lives in config/ops.php — keep that list in sync with
+// the schedule entries above.
+Schedule::command('ops:nightly-digest')->dailyAt('11:00');
