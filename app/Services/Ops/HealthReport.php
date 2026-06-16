@@ -5,7 +5,6 @@ namespace App\Services\Ops;
 use App\Models\BookLibraryTitle;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 final class HealthReport
 {
@@ -17,15 +16,24 @@ final class HealthReport
 
     public static function build(): self
     {
-        $staleHours = (int) config('ops.digest.pipeline_stale_hours', 26);
+        $staleHours = (int) config('ops.digest.pipeline_stale_hours');
         $jobs = [];
 
         foreach (config('ops.watch', []) as $w) {
             if (($w['cadence'] ?? null) !== 'daily') {
-                throw new RuntimeException("Unsupported cadence '{$w['cadence']}' for '{$w['key']}'; v1 handles 'daily' only.");
+                $jobs[] = new JobHealth(
+                    $w['key'] ?? '?',
+                    $w['label'] ?? ($w['key'] ?? '?'),
+                    'warn',
+                    "cadence '".($w['cadence'] ?? 'null')."' not yet supported (digest handles 'daily' only)",
+                );
+
+                continue;
             }
             $jobs[] = self::assessDaily($w, $staleHours);
         }
+
+        self::reconcileVerifyKids($jobs);
 
         $rank = ['ok' => 0, 'warn' => 1, 'fail' => 2];
         $overall = 'ok';
@@ -86,13 +94,14 @@ final class HealthReport
         }
 
         if ($w['key'] === 'book_enrich') {
-            $total = BookLibraryTitle::count();
-            $enriched = BookLibraryTitle::whereNotNull('enriched_at')->count();
+            $stats = BookLibraryTitle::selectRaw('count(*) as total, count(enriched_at) as enriched')->first();
+            $total = (int) $stats->total;
+            $enriched = (int) $stats->enriched;
             $remaining = $total - $enriched;
             $tonight = (int) ($row->titles_processed ?? 0);
 
             if ($total > 0 && $remaining === 0) {
-                return $base.' — ✅ BACKFILL COMPLETE: all '.$total
+                return $base.' — BACKFILL COMPLETE: all '.$total
                     .' titles enriched. Safe to remove the temporary book:seed/book:enrich crons.';
             }
 
@@ -107,8 +116,22 @@ final class HealthReport
             $added = (int) ($row->titles_processed ?? 0);
 
             return $base.' — '.($added === 0
-                ? '✅ nothing new to seed (nyt-history list exhausted)'
+                ? 'nothing new to seed (nyt-history list exhausted)'
                 : $added.' new titles seeded');
+        }
+
+        if ($w['key'] === 'streaming') {
+            $changes = DB::table('streaming_sync_log')->where('sync_type', 'changes')
+                ->where('status', 'completed')->latest('id')->first();
+            $parts = [];
+            if ($changes && ! empty($changes->titles_processed)) {
+                $parts[] = $changes->titles_processed.' titles';
+            }
+            if ($changes && ! empty($changes->api_calls_used)) {
+                $parts[] = $changes->api_calls_used.' calls';
+            }
+
+            return $base.($parts ? ' — '.implode(', ', $parts).' synced' : '');
         }
 
         $extra = [];
@@ -120,5 +143,47 @@ final class HealthReport
         }
 
         return $base.($extra ? ' — '.implode(', ', $extra) : '');
+    }
+
+    /**
+     * verify-kids runs as the last fail-fast step of streaming:update; on a night an
+     * earlier step fails it's skipped and writes no row, so the prior night's row can
+     * still look fresh. If the latest pipeline attempt started after the latest
+     * verify_kids run completed, this cycle's Kids check didn't run — downgrade an
+     * otherwise-ok verdict so a green line can't sit next to a failed pipeline.
+     *
+     * @param JobHealth[] $jobs
+     */
+    private static function reconcileVerifyKids(array &$jobs): void
+    {
+        $idx = null;
+        foreach ($jobs as $i => $j) {
+            if ($j->key === 'verify_kids') {
+                $idx = $i;
+                break;
+            }
+        }
+        if ($idx === null || $jobs[$idx]->verdict !== 'ok') {
+            return; // only override a verdict that would otherwise read healthy
+        }
+
+        $pipe = DB::table('streaming_sync_log')->where('sync_type', 'pipeline')->latest('id')->first();
+        if (! $pipe || ! $pipe->started_at) {
+            return;
+        }
+        $pipeStarted = Carbon::parse($pipe->started_at);
+
+        $vkRow = DB::table('streaming_sync_log')->where('sync_type', 'verify_kids')->latest('id')->first();
+        $vkDone = ($vkRow && $vkRow->completed_at) ? Carbon::parse($vkRow->completed_at) : null;
+
+        if ($vkDone === null || $vkDone->lt($pipeStarted)) {
+            $jobs[$idx] = new JobHealth(
+                $jobs[$idx]->key,
+                $jobs[$idx]->label,
+                'warn',
+                'did not run in the latest pipeline cycle (an earlier step failed)',
+                $jobs[$idx]->lastRun,
+            );
+        }
     }
 }

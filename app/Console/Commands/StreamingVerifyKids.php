@@ -23,6 +23,8 @@ class StreamingVerifyKids extends Command
     /** Flush bulk writes every N processed titles — bounds crash-loss + checked_at skew while avoiding 1 UPDATE/title. */
     private const WRITE_BATCH = 100;
 
+    private ?string $abortReason = null;
+
     public function handle(NetflixKidsClient $client): int
     {
         $log = StreamingSyncLog::create([
@@ -36,7 +38,7 @@ class StreamingVerifyKids extends Command
 
             $session = $this->gateSession($client, $ceiling);
             if ($session === null) {
-                return $this->failLog($log, 'session gate aborted');
+                return $this->failLog($log, $this->abortReason ?? 'session gate aborted');
             }
 
             $this->resetOrphans();
@@ -49,7 +51,7 @@ class StreamingVerifyKids extends Command
 
             $levels = $this->fetchMaturity($client, $byNf, $session);
             if ($levels === null) {
-                return $this->failLog($log, 'maturity fetch failed mid-run');
+                return $this->failLog($log, $this->abortReason ?? 'maturity fetch failed mid-run');
             }
 
             $stats = $this->runSearchStage($client, $session['app_version'], $byNf, $levels, $ceiling);
@@ -304,7 +306,8 @@ class StreamingVerifyKids extends Command
 
     private function abort(string $why): int
     {
-        $this->error("Netflix Kids verification aborted: $why. No data written. "
+        $this->abortReason = $why;
+        $this->error("Netflix Kids verification aborted: $why. Streaming titles untouched. "
             .'Refresh NETFLIX_KIDS_COOKIE (US VPN, Kids profile) and/or NETFLIX_KIDS_PERSISTED_QUERY_ID.');
 
         return self::FAILURE;

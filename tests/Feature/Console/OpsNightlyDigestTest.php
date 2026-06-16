@@ -17,8 +17,12 @@ class OpsNightlyDigestTest extends TestCase
     {
         parent::setUp();
         Carbon::setTestNow('2026-06-16 11:00:00');
+        // Pipeline started at 09:00 so it predates verify_kids completion at 09:14 — realistic order.
+        DB::table('streaming_sync_log')->insert([
+            'sync_type' => 'pipeline', 'started_at' => '2026-06-16 09:00:00',
+            'completed_at' => '2026-06-16 09:29:00', 'status' => 'completed',
+        ]);
         foreach ([
-            ['streaming_sync_log', 'pipeline', '2026-06-16 09:29:00'],
             ['streaming_sync_log', 'verify_kids', '2026-06-16 09:14:00'],
             ['book_sync_log', 'enrich', '2026-06-16 10:22:00'],
             ['book_sync_log', 'seed_nyt_history', '2026-06-16 09:30:00'],
@@ -56,6 +60,16 @@ class OpsNightlyDigestTest extends TestCase
         Mail::fake();
 
         $this->artisan('ops:nightly-digest', ['--dry-run' => true])->assertExitCode(0);
+
+        Mail::assertNothingSent();
+    }
+
+    public function test_empty_recipient_fails_without_throwing(): void
+    {
+        Mail::fake();
+        config(['ops.digest.to' => '']);
+
+        $this->artisan('ops:nightly-digest')->assertExitCode(1);
 
         Mail::assertNothingSent();
     }

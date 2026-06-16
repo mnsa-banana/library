@@ -26,8 +26,15 @@ class OpsNightlyDigest extends Command
             return self::SUCCESS;
         }
 
-        Mail::to(config('ops.digest.to'))->send(new NightlyDigest($report));
-        $this->info('Digest sent to '.config('ops.digest.to'));
+        $to = config('ops.digest.to');
+        if (empty($to)) {
+            $this->error('ops.digest.to is not configured — cannot send digest.');
+
+            return self::FAILURE;
+        }
+
+        Mail::to($to)->send(new NightlyDigest($report));
+        $this->info('Digest sent to '.$to);
 
         return self::SUCCESS;
     }

@@ -292,6 +292,8 @@ class StreamingVerifyKidsTest extends TestCase
         $this->assertNotNull($row);
         $this->assertSame('failed', $row->status);
         $this->assertNotNull($row->error_message);
+        // The specific abort reason (not a generic fallback) must be persisted.
+        $this->assertStringContainsString('not surfaced', $row->error_message);
     }
 
     public function test_writes_failed_row_and_rethrows_on_uncaught_exception(): void

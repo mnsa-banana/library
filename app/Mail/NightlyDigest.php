@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Services\Ops\HealthReport;
+use App\Services\Ops\JobHealth;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
@@ -13,12 +14,7 @@ class NightlyDigest extends Mailable
 
     public function envelope(): Envelope
     {
-        $emoji = match ($this->report->overall) {
-            'ok' => '✅',
-            'warn' => '⚠️',
-            'fail' => '🔴',
-            default => '❓',
-        };
+        $emoji = JobHealth::emojiFor($this->report->overall);
         $headline = match ($this->report->overall) {
             'ok' => 'all green',
             'warn' => 'incomplete',

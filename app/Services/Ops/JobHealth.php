@@ -14,13 +14,18 @@ final class JobHealth
         public ?Carbon $lastRun = null,
     ) {}
 
-    public function emoji(): string
+    public static function emojiFor(string $verdict): string
     {
-        return match ($this->verdict) {
+        return match ($verdict) {
             'ok' => '✅',
             'warn' => '⚠️',
             'fail' => '🔴',
             default => '❓',
         };
+    }
+
+    public function emoji(): string
+    {
+        return self::emojiFor($this->verdict);
     }
 }

@@ -46,7 +46,7 @@ class HealthReportTest extends TestCase
 
     public function test_all_completed_today_is_overall_ok(): void
     {
-        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['titles_processed' => 4653, 'api_calls_used' => 272]);
+        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00', 'titles_processed' => 4653, 'api_calls_used' => 272]);
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00', ['metadata' => json_encode(['candidates' => 600, 'surfaced' => 9, 'pruned' => 38])]);
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00', ['titles_processed' => 463]);
         $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00', ['titles_processed' => 10]);
@@ -84,7 +84,7 @@ class HealthReportTest extends TestCase
 
     public function test_running_today_is_incomplete_warn(): void
     {
-        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00');
+        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00']);
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00');
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
         // seed still running (no completed_at), started today.
@@ -97,7 +97,7 @@ class HealthReportTest extends TestCase
 
     public function test_never_run_job_is_fail_missing(): void
     {
-        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00');
+        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00']);
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00');
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
         // no seed row at all
@@ -150,5 +150,44 @@ class HealthReportTest extends TestCase
 
         $this->assertSame('ok', $job->verdict);
         $this->assertStringContainsString('exhausted', $job->summary);
+    }
+
+    public function test_non_daily_cadence_degrades_to_warn_without_throwing(): void
+    {
+        config(['ops.watch' => [
+            ['key' => 'streaming', 'table' => 'streaming_sync_log', 'type' => 'pipeline', 'label' => 'Streaming pipeline', 'cadence' => 'daily'],
+            ['key' => 'book_weekly', 'table' => 'book_sync_log', 'type' => 'weekly', 'label' => 'Book weekly', 'cadence' => 'weekly:thu'],
+        ]]);
+        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00']);
+
+        $jobs = $this->jobs(HealthReport::build());
+        $this->assertSame('warn', $jobs['book_weekly']);
+        $this->assertSame('ok', $jobs['streaming']); // the daily job is still assessed normally
+    }
+
+    public function test_verify_kids_warns_when_skipped_in_latest_pipeline(): void
+    {
+        // Tonight's pipeline failed early (sync) so verify-kids never ran; the latest
+        // verify_kids row is yesterday's and would otherwise look fresh (<26h).
+        $this->log('streaming_sync_log', 'pipeline', 'failed', '2026-06-16 09:05:00', ['started_at' => '2026-06-16 09:00:00', 'error_message' => 'sync failed']);
+        $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-15 09:14:00');
+        $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
+        $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00');
+
+        $jobs = $this->jobs(HealthReport::build());
+        $this->assertSame('fail', $jobs['streaming']);
+        $this->assertSame('warn', $jobs['verify_kids']);
+    }
+
+    public function test_streaming_summary_pulls_counts_from_changes_row(): void
+    {
+        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00']);
+        $this->log('streaming_sync_log', 'changes', 'completed', '2026-06-16 09:13:00', ['titles_processed' => 4653, 'api_calls_used' => 272]);
+        $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00');
+
+        $job = collect(HealthReport::build()->jobs)->firstWhere('key', 'streaming');
+        $this->assertSame('ok', $job->verdict);
+        $this->assertStringContainsString('4653 titles', $job->summary);
+        $this->assertStringContainsString('272 calls', $job->summary);
     }
 }
