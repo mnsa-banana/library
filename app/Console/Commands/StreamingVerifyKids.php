@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\StreamingSyncLog;
 use App\Services\NetflixKids\NetflixKidsClient;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -24,27 +25,55 @@ class StreamingVerifyKids extends Command
 
     public function handle(NetflixKidsClient $client): int
     {
-        $ceiling = (int) config('services.netflix_kids.maturity_ceiling');
+        $log = StreamingSyncLog::create([
+            'sync_type' => 'verify_kids',
+            'started_at' => now(),
+            'status' => 'running',
+        ]);
 
-        $session = $this->gateSession($client, $ceiling);
-        if ($session === null) {
-            return self::FAILURE;
+        try {
+            $ceiling = (int) config('services.netflix_kids.maturity_ceiling');
+
+            $session = $this->gateSession($client, $ceiling);
+            if ($session === null) {
+                return $this->failLog($log, 'session gate aborted');
+            }
+
+            $this->resetOrphans();
+
+            [$byNf, $badLinks] = $this->loadCandidates($this->staleFloor());
+            if ($badLinks > 0) {
+                $this->warn("  {$badLinks} Netflix offer link(s) had no numeric /title/<id> — left unverified.");
+            }
+            $this->info('Candidates: '.count($byNf).' currently-playable US Netflix titles to verify.');
+
+            $levels = $this->fetchMaturity($client, $byNf, $session);
+            if ($levels === null) {
+                return $this->failLog($log, 'maturity fetch failed mid-run');
+            }
+
+            $stats = $this->runSearchStage($client, $session['app_version'], $byNf, $levels, $ceiling);
+
+            $log->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'titles_processed' => $stats['candidates'],
+                'metadata' => $stats,
+            ]);
+
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->failLog($log, $e->getMessage());
+
+            throw $e;
         }
+    }
 
-        $this->resetOrphans();
+    private function failLog(StreamingSyncLog $log, string $why): int
+    {
+        $log->update(['status' => 'failed', 'completed_at' => now(), 'error_message' => $why]);
 
-        [$byNf, $badLinks] = $this->loadCandidates($this->staleFloor());
-        if ($badLinks > 0) {
-            $this->warn("  {$badLinks} Netflix offer link(s) had no numeric /title/<id> — left unverified.");
-        }
-        $this->info('Candidates: '.count($byNf).' currently-playable US Netflix titles to verify.');
-
-        $levels = $this->fetchMaturity($client, $byNf, $session);
-        if ($levels === null) {
-            return self::FAILURE; // maturity fetch failed mid-run; aborted with no writes
-        }
-
-        return $this->runSearchStage($client, $session['app_version'], $byNf, $levels, $ceiling);
+        return self::FAILURE;
     }
 
     /** Stage 0: validate session + BOTH endpoints before any write. Returns the session, or null after aborting. */
@@ -175,8 +204,12 @@ class StreamingVerifyKids extends Command
         return $levels;
     }
 
-    /** Stage 2: per-title Kids search with batched writes; null maturity = unknown (kept null, but converged). */
-    private function runSearchStage(NetflixKidsClient $client, string $app, array $byNf, array $levels, int $ceiling): int
+    /**
+     * Stage 2: per-title Kids search with batched writes; null maturity = unknown (kept null, but converged).
+     *
+     * @return array{candidates:int,surfaced:int,pruned:int,unknown:int,failed:int} per-run counts for the sync log
+     */
+    private function runSearchStage(NetflixKidsClient $client, string $app, array $byNf, array $levels, int $ceiling): array
     {
         $this->info(sprintf('Stage 2: searching Kids catalog (ceiling=maturityLevel %d)…', $ceiling));
         $delay = (float) config('services.netflix_kids.search_delay');
@@ -260,7 +293,13 @@ class StreamingVerifyKids extends Command
             count($byNf), $surfaced, $pruned, $unknown, $skipped
         ));
 
-        return self::SUCCESS;
+        return [
+            'candidates' => count($byNf),
+            'surfaced' => $surfaced,
+            'pruned' => $pruned,
+            'unknown' => $unknown,
+            'failed' => $skipped,
+        ];
     }
 
     private function abort(string $why): int

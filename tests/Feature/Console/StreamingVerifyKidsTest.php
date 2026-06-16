@@ -249,4 +249,48 @@ class StreamingVerifyKidsTest extends TestCase
         // offer already expired -> not a candidate -> never verified
         $this->assertNull(DB::table('streaming_titles')->where('id', 't-exp')->value('netflix_kids_checked_at'));
     }
+
+    public function test_writes_completed_verify_kids_log_row_with_counts(): void
+    {
+        $this->cfg();
+        // One real candidate beyond the anchors: surfaced (maturity under ceiling + search hit).
+        $this->seedTitle('t-pingu', 'Pingu', '12345');
+        $maturity = $this->anchorMaturity() + ['12345' => self::maturityAtom(40)];
+        $this->fakeNetflix($this->goodKidsHtml(), $maturity, [
+            "gabby's dollhouse" => [81009946],
+            'storybots' => [81474560],
+            'seinfeld' => [],
+            'Pingu' => [12345],
+        ]);
+
+        $this->artisan('streaming:verify-kids', ['--force' => true])->assertExitCode(0);
+
+        $row = DB::table('streaming_sync_log')->where('sync_type', 'verify_kids')->latest('id')->first();
+        $this->assertNotNull($row, 'verify_kids row should be written');
+        $this->assertSame('completed', $row->status);
+        $this->assertNotNull($row->completed_at);
+        $meta = json_decode($row->metadata, true);
+        $this->assertSame(1, $meta['candidates']);   // anchors are gate-only, not candidates
+        $this->assertSame(1, $meta['surfaced']);
+        $this->assertSame(0, $meta['pruned']);
+    }
+
+    public function test_writes_failed_verify_kids_row_when_session_gate_aborts(): void
+    {
+        $this->cfg();
+        $this->seedTitle('t-pingu', 'Pingu', '12345');
+        // Anchors NOT surfaced in search → gateSession aborts before any candidate work.
+        $this->fakeNetflix($this->goodKidsHtml(), $this->anchorMaturity(), [
+            "gabby's dollhouse" => [],
+            'storybots' => [],
+            'seinfeld' => [],
+        ]);
+
+        $this->artisan('streaming:verify-kids', ['--force' => true])->assertExitCode(1);
+
+        $row = DB::table('streaming_sync_log')->where('sync_type', 'verify_kids')->latest('id')->first();
+        $this->assertNotNull($row);
+        $this->assertSame('failed', $row->status);
+        $this->assertNotNull($row->error_message);
+    }
 }
