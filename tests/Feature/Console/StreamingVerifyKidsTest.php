@@ -293,4 +293,37 @@ class StreamingVerifyKidsTest extends TestCase
         $this->assertSame('failed', $row->status);
         $this->assertNotNull($row->error_message);
     }
+
+    public function test_writes_failed_row_and_rethrows_on_uncaught_exception(): void
+    {
+        // Covers the outer catch (\Throwable $e) in handle() — the branch that writes
+        // status='failed' then re-throws.  gateSession() has its own inner try/catch so
+        // client exceptions can't bubble out of it; resetOrphans() is the first post-gate
+        // call with NO local catch, making it the cleanest trigger.
+        // We pass the session gate via Http::fake (purely HTTP), then drop
+        // streaming_title_offers so the DB::table() call inside resetOrphans() throws a
+        // QueryException that reaches the outer catch.
+        $this->cfg();
+        $this->fakeNetflix($this->goodKidsHtml(), $this->anchorMaturity(), $this->anchorSearch());
+
+        // Drop the table AFTER Http::fake — the gate makes only HTTP calls and still passes,
+        // but resetOrphans()'s DB query immediately fails with a QueryException.
+        DB::statement('DROP TABLE IF EXISTS streaming_title_offers');
+
+        // The re-thrown exception propagates through PendingCommand all the way to PHPUnit,
+        // so we must catch it here.  The outer catch in handle() writes the failed log row
+        // BEFORE re-throwing, so the row is visible even though the command never returned.
+        $thrown = null;
+        try {
+            $this->artisan('streaming:verify-kids', ['--force' => true]);
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+        $this->assertNotNull($thrown, 'expected the re-thrown exception to reach PHPUnit');
+
+        $row = DB::table('streaming_sync_log')->where('sync_type', 'verify_kids')->latest('id')->first();
+        $this->assertNotNull($row, 'a verify_kids log row must be written even on uncaught exception');
+        $this->assertSame('failed', $row->status);
+        $this->assertNotNull($row->error_message, 'error_message must capture the exception message');
+    }
 }
