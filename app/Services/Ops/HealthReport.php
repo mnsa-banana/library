@@ -88,10 +88,27 @@ final class HealthReport
         if ($w['key'] === 'book_enrich') {
             $total = BookLibraryTitle::count();
             $enriched = BookLibraryTitle::whereNotNull('enriched_at')->count();
-            $pct = $total > 0 ? round($enriched / $total * 100, 1) : 0;
+            $remaining = $total - $enriched;
+            $tonight = (int) ($row->titles_processed ?? 0);
 
-            return $base.' — '.($row->titles_processed ?? 0).' enriched tonight; '
-                ."{$enriched}/{$total} = {$pct}% overall";
+            if ($total > 0 && $remaining === 0) {
+                return $base.' — ✅ BACKFILL COMPLETE: all '.$total
+                    .' titles enriched. Safe to remove the temporary book:seed/book:enrich crons.';
+            }
+
+            $pct = $total > 0 ? round($enriched / $total * 100, 1) : 0;
+            $eta = $tonight > 0 ? ' (~'.(int) ceil($remaining / $tonight).' more nights)' : '';
+
+            return $base.' — '.$tonight.' enriched tonight; '
+                ."{$enriched}/{$total} = {$pct}%; {$remaining} remaining".$eta;
+        }
+
+        if ($w['key'] === 'book_seed') {
+            $added = (int) ($row->titles_processed ?? 0);
+
+            return $base.' — '.($added === 0
+                ? '✅ nothing new to seed (nyt-history list exhausted)'
+                : $added.' new titles seeded');
         }
 
         $extra = [];

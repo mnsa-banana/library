@@ -104,4 +104,51 @@ class HealthReportTest extends TestCase
 
         $this->assertSame('fail', $this->jobs(HealthReport::build())['book_seed']);
     }
+
+    public function test_book_enrich_shows_remaining_and_eta_when_backlog_left(): void
+    {
+        // 10 titles, 3 enriched → 7 remaining; tonight processed 2 → ETA ~4 more nights
+        \App\Models\BookLibraryTitle::create(['title' => 'Book A', 'enriched_at' => now()->subDay()]);
+        \App\Models\BookLibraryTitle::create(['title' => 'Book B', 'enriched_at' => now()->subDay()]);
+        \App\Models\BookLibraryTitle::create(['title' => 'Book C', 'enriched_at' => now()->subDay()]);
+        for ($i = 1; $i <= 7; $i++) {
+            \App\Models\BookLibraryTitle::create(['title' => "Unenriched {$i}"]);
+        }
+
+        $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00', ['titles_processed' => 2]);
+
+        $report = HealthReport::build();
+        $job = collect($report->jobs)->firstWhere('key', 'book_enrich');
+
+        $this->assertSame('ok', $job->verdict);
+        $this->assertStringContainsString('7 remaining', $job->summary);
+        $this->assertStringContainsString('more nights', $job->summary);
+    }
+
+    public function test_book_enrich_shows_backfill_complete_when_drained(): void
+    {
+        // 5 titles, all enriched → 0 remaining
+        for ($i = 1; $i <= 5; $i++) {
+            \App\Models\BookLibraryTitle::create(['title' => "Book {$i}", 'enriched_at' => now()->subDay()]);
+        }
+
+        $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00', ['titles_processed' => 5]);
+
+        $report = HealthReport::build();
+        $job = collect($report->jobs)->firstWhere('key', 'book_enrich');
+
+        $this->assertSame('ok', $job->verdict);
+        $this->assertStringContainsString('BACKFILL COMPLETE', $job->summary);
+    }
+
+    public function test_book_seed_shows_exhausted_when_nothing_added(): void
+    {
+        $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00', ['titles_processed' => 0]);
+
+        $report = HealthReport::build();
+        $job = collect($report->jobs)->firstWhere('key', 'book_seed');
+
+        $this->assertSame('ok', $job->verdict);
+        $this->assertStringContainsString('exhausted', $job->summary);
+    }
 }
