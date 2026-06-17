@@ -27,15 +27,11 @@ Schedule::command('book:weekly')->weeklyOn(4, '09:00')->withoutOverlapping();
 // (900-call ceiling, quota-stop) and naturally resumable via enriched_at.
 Schedule::command('book:enrich')->weeklyOn(4, '10:00')->withoutOverlapping();
 
-// 2. + 3. TEMPORARY backfill (added 2026-06-13): library was seeded ~9%
-// enriched and the NYT history list isn't in yet. Daily, sequenced after the
-// 09:00 streaming sync — seed first (resumes from its cursor), then enrich
-// (resumes via enriched_at, self-budgets ~900 calls/run). book:enrich at
-// 10:00 UTC = ~3h after Google Books' midnight-Pacific quota reset. A few days
-// of runs catch everything up. appendOutputTo routes the summary to the
-// container log. Remove these two once `book:status` shows fully enriched and
-// nyt-history seeded.
-Schedule::command('book:seed --source=nyt-history --resume')->dailyAt('09:30')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
+// TEMPORARY backfill (added 2026-06-13; nyt-history seed retired 2026-06-17 once
+// fully seeded). The library was seeded ~9% enriched; this daily enrich run
+// resumes via enriched_at and self-budgets (~900 calls/run), at 10:00 UTC (~3h
+// after Google Books' midnight-Pacific quota reset). appendOutputTo routes the
+// summary to the container log. Remove once `book:status` shows fully enriched.
 Schedule::command('book:enrich')->dailyAt('10:00')->withoutOverlapping()->appendOutputTo('/proc/1/fd/1');
 
 // Daily ops health digest — emails the night's run summary at 11:00 UTC, after

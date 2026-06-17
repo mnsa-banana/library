@@ -112,14 +112,6 @@ final class HealthReport
                 ."{$enriched}/{$total} = {$pct}%; {$remaining} remaining".$eta;
         }
 
-        if ($w['key'] === 'book_seed') {
-            $added = (int) ($row->titles_processed ?? 0);
-
-            return $base.' — '.($added === 0
-                ? 'nothing new to seed (nyt-history list exhausted)'
-                : $added.' new titles seeded');
-        }
-
         if ($w['key'] === 'streaming') {
             $changes = DB::table('streaming_sync_log')->where('sync_type', 'changes')
                 ->where('status', 'completed')->latest('id')->first();

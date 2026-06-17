@@ -25,7 +25,6 @@ class OpsNightlyDigestTest extends TestCase
         foreach ([
             ['streaming_sync_log', 'verify_kids', '2026-06-16 09:14:00'],
             ['book_sync_log', 'enrich', '2026-06-16 10:22:00'],
-            ['book_sync_log', 'seed_nyt_history', '2026-06-16 09:30:00'],
         ] as [$table, $type, $done]) {
             DB::table($table)->insert([
                 'sync_type' => $type,

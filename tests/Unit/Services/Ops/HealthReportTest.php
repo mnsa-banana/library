@@ -49,12 +49,11 @@ class HealthReportTest extends TestCase
         $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00', 'titles_processed' => 4653, 'api_calls_used' => 272]);
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00', ['metadata' => json_encode(['candidates' => 600, 'surfaced' => 9, 'pruned' => 38])]);
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00', ['titles_processed' => 463]);
-        $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00', ['titles_processed' => 10]);
 
         $report = HealthReport::build();
 
         $this->assertSame('ok', $report->overall);
-        $this->assertSame(['ok', 'ok', 'ok', 'ok'], array_values($this->jobs($report)));
+        $this->assertSame(['ok', 'ok', 'ok'], array_values($this->jobs($report)));
     }
 
     public function test_failed_pipeline_is_fail_and_drives_overall(): void
@@ -62,7 +61,6 @@ class HealthReportTest extends TestCase
         $this->log('streaming_sync_log', 'pipeline', 'failed', '2026-06-16 09:14:00', ['error_message' => 'cookie stale']);
         $this->log('streaming_sync_log', 'verify_kids', 'failed', '2026-06-16 09:14:00', ['error_message' => 'session gate aborted']);
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
-        $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00');
 
         $report = HealthReport::build();
 
@@ -77,7 +75,6 @@ class HealthReportTest extends TestCase
         $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-15 05:00:00');
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00');
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
-        $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00');
 
         $this->assertSame('fail', $this->jobs(HealthReport::build())['streaming']);
     }
@@ -86,12 +83,11 @@ class HealthReportTest extends TestCase
     {
         $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00']);
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00');
-        $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
-        // seed still running (no completed_at), started today.
-        $this->log('book_sync_log', 'seed_nyt_history', 'running', null);
+        // enrich still running (no completed_at), started today.
+        $this->log('book_sync_log', 'enrich', 'running', null);
 
         $report = HealthReport::build();
-        $this->assertSame('warn', $this->jobs($report)['book_seed']);
+        $this->assertSame('warn', $this->jobs($report)['book_enrich']);
         $this->assertSame('warn', $report->overall);
     }
 
@@ -99,10 +95,9 @@ class HealthReportTest extends TestCase
     {
         $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00']);
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-16 09:14:00');
-        $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
-        // no seed row at all
+        // no enrich row at all
 
-        $this->assertSame('fail', $this->jobs(HealthReport::build())['book_seed']);
+        $this->assertSame('fail', $this->jobs(HealthReport::build())['book_enrich']);
     }
 
     public function test_book_enrich_shows_remaining_and_eta_when_backlog_left(): void
@@ -141,17 +136,6 @@ class HealthReportTest extends TestCase
         $this->assertStringContainsString('BACKFILL COMPLETE', $job->summary);
     }
 
-    public function test_book_seed_shows_exhausted_when_nothing_added(): void
-    {
-        $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00', ['titles_processed' => 0]);
-
-        $report = HealthReport::build();
-        $job = collect($report->jobs)->firstWhere('key', 'book_seed');
-
-        $this->assertSame('ok', $job->verdict);
-        $this->assertStringContainsString('exhausted', $job->summary);
-    }
-
     public function test_non_daily_cadence_degrades_to_warn_without_throwing(): void
     {
         config(['ops.watch' => [
@@ -172,7 +156,6 @@ class HealthReportTest extends TestCase
         $this->log('streaming_sync_log', 'pipeline', 'failed', '2026-06-16 09:05:00', ['started_at' => '2026-06-16 09:00:00', 'error_message' => 'sync failed']);
         $this->log('streaming_sync_log', 'verify_kids', 'completed', '2026-06-15 09:14:00');
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00');
-        $this->log('book_sync_log', 'seed_nyt_history', 'completed', '2026-06-16 09:30:00');
 
         $jobs = $this->jobs(HealthReport::build());
         $this->assertSame('fail', $jobs['streaming']);
