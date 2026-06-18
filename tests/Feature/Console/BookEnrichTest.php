@@ -389,6 +389,35 @@ class BookEnrichTest extends TestCase
         $this->assertSame(0, $log->titles_processed);
     }
 
+    public function test_open_library_persistent_connection_failure_stops_the_run_cleanly_without_stamping_the_row(): void
+    {
+        BookLibraryTitle::create([
+            'title' => 'First Book',
+            'author' => 'Author One',
+            'isbn13s' => ['9781234567897'],
+        ]);
+        BookLibraryTitle::create(['title' => 'Second Book', 'author' => 'Author Two']);
+
+        // OL unreachable (cURL 28 connect timeout) on every retry — a transient
+        // external blip must stop the run cleanly, not fail it loudly.
+        Http::fake([
+            'openlibrary.org/*' => Http::sequence()
+                ->pushFailedConnection('cURL error 28: timed out')
+                ->pushFailedConnection('cURL error 28: timed out')
+                ->pushFailedConnection('cURL error 28: timed out'),
+        ]);
+
+        $this->artisan('book:enrich')->assertExitCode(0);
+
+        // Neither row stamped — the interrupted row must be retried next run.
+        $this->assertSame(0, BookLibraryTitle::whereNotNull('enriched_at')->count());
+
+        $log = BookSyncLog::sole();
+        $this->assertSame('completed', $log->status);
+        $this->assertFalse($log->metadata['exhausted']);
+        $this->assertSame(0, $log->titles_processed);
+    }
+
     public function test_google_books_403_rate_limit_exceeded_stops_the_run_cleanly(): void
     {
         BookLibraryTitle::create(['title' => 'First Book', 'author' => 'Author One']);

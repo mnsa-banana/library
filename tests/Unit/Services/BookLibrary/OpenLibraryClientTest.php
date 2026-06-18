@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\BookLibrary;
 
 use App\Services\BookLibrary\OpenLibraryClient;
+use App\Services\BookLibrary\OpenLibraryConnectionException;
 use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -124,8 +125,10 @@ class OpenLibraryClientTest extends TestCase
 
         try {
             (new OpenLibraryClient(backoffBaseMs: 0))->resolveIsbn('9780064404990');
-            $this->fail('Expected RuntimeException after exhausting retries');
-        } catch (RuntimeException $e) {
+            $this->fail('Expected OpenLibraryConnectionException after exhausting retries');
+        } catch (OpenLibraryConnectionException $e) {
+            // Typed so commands can clean-stop on a transient outage (mirrors
+            // OpenLibraryRateLimitedException) instead of failing the run.
             $this->assertStringContainsString('connection failed', $e->getMessage());
         }
 

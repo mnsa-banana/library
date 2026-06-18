@@ -6,6 +6,7 @@ use App\Models\BookLibraryTitle;
 use App\Services\BookLibrary\GoogleBooksClient;
 use App\Services\BookLibrary\GoogleBooksRateLimitedException;
 use App\Services\BookLibrary\OpenLibraryClient;
+use App\Services\BookLibrary\OpenLibraryConnectionException;
 use App\Services\BookLibrary\OpenLibraryRateLimitedException;
 use App\Services\BookLibrary\SyncRun;
 use Illuminate\Console\Command;
@@ -70,9 +71,11 @@ class BookEnrich extends Command
                 try {
                     $calls += $this->openLibraryPass($row, $openLibrary, $run);
                     $calls += $this->googleBooksPass($row, $googleBooks, $run);
-                } catch (GoogleBooksRateLimitedException|OpenLibraryRateLimitedException $e) {
-                    // Clean stop: the interrupted row stays unstamped and is
-                    // picked up by the next run's whereNull selection.
+                } catch (GoogleBooksRateLimitedException|OpenLibraryRateLimitedException|OpenLibraryConnectionException $e) {
+                    // Clean stop: a rate limit or a transient OL outage leaves
+                    // the interrupted row unstamped, picked up by the next
+                    // run's whereNull selection — an external blip must not
+                    // fail the nightly run loudly.
                     return $this->stopRun($run, $e->getMessage());
                 }
 

@@ -104,8 +104,10 @@ class OpenLibraryClient
             } catch (ConnectionException $e) {
                 // Transport-level failure (DNS, connect, or read timeout):
                 // treat as transient and retry rather than aborting the run.
+                // Typed so commands clean-stop on a sustained outage (like a
+                // 429) instead of failing the run loudly.
                 if ($attempt === self::MAX_RETRIES - 1) {
-                    throw new RuntimeException(
+                    throw new OpenLibraryConnectionException(
                         "Open Library connection failed on {$url} after retries: {$e->getMessage()}",
                         previous: $e,
                     );

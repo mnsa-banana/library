@@ -97,7 +97,11 @@ skips everything ≤ the final cursor — a refresh pass must be a fresh full ru
 client raises its typed exception (`NytRateLimitedException`,
 `OpenLibraryRateLimitedException`, `GoogleBooksRateLimitedException` — the
 latter on 429 after retries *or* 403 `rateLimitExceeded`; any other 403 fails
-fast). Commands catch it, persist the cursor, complete the run with
+fast). A retry-exhausted OL *connection* failure (cURL 28 / DNS / read timeout)
+raises the typed `OpenLibraryConnectionException` — `book:enrich` clean-stops on
+it too, so a transient OL outage resumes next run instead of failing the nightly
+digest red (a plain `RuntimeException` still fails the run loudly). Commands
+catch the typed exception, persist the cursor, complete the run with
 `metadata.exhausted=false`, and exit 0 — rerun later with `--resume`.
 `exhausted=true` means the source was fully walked. An empty sitemap walk or
 empty NYT `lists/names` **fails** the run instead — completing would be
