@@ -519,8 +519,19 @@ class BookEnrichTest extends TestCase
         $events = collect($this->app->make(Schedule::class)->events())
             ->filter(fn (Event $event) => str_contains((string) $event->command, 'book:enrich'));
 
-        $this->assertCount(1, $events);
-        $this->assertSame('0 10 * * 4', $events->first()->expression);
-        $this->assertTrue($events->first()->withoutOverlapping);
+        // Two schedules during the backfill window: the permanent weekly run
+        // and a TEMPORARY daily backfill (routes/console.php) removed once
+        // book:status shows fully enriched. Both guard against overlap.
+        $this->assertCount(2, $events);
+        $this->assertTrue($events->every(fn (Event $event) => $event->withoutOverlapping));
+
+        // Permanent contract: Thursdays 10:00, an hour after book:weekly (09:00).
+        $weekly = $events->first(fn (Event $event) => $event->expression === '0 10 * * 4');
+        $this->assertNotNull($weekly, 'expected the weekly Thursday 10:00 enrich schedule');
+
+        // Temporary backfill: daily 10:00. When this assertion fails because the
+        // cron was retired, drop it (and the count above) rather than reinstate.
+        $dailyBackfill = $events->first(fn (Event $event) => $event->expression === '0 10 * * *');
+        $this->assertNotNull($dailyBackfill, 'expected the temporary daily 10:00 backfill enrich schedule');
     }
 }
