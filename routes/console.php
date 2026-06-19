@@ -39,3 +39,8 @@ Schedule::command('book:enrich')->dailyAt('10:00')->withoutOverlapping()->append
 // tables only. Watch-list lives in config/ops.php — keep that list in sync with
 // the schedule entries above.
 Schedule::command('ops:nightly-digest')->dailyAt('11:00');
+
+// Monthly Netflix-Kids gap backstop: cross-reference TMDB watch/providers against
+// our offer table and fill in Netflix offers MOTN missed (off-peak from the daily
+// 09:00 pipeline; reads TMDB (free) + a bounded set of Kids searches).
+Schedule::command('streaming:tmdb-backstop')->monthlyOn(1, '11:00')->withoutOverlapping();

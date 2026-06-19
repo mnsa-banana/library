@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Console;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -93,6 +94,15 @@ class StreamingTmdbBackstopTest extends TestCase
         $this->artisan('streaming:tmdb-backstop')->assertExitCode(0);
 
         $this->assertDatabaseMissing('streaming_title_offers', ['title_id' => 'm3', 'service_id' => 'netflix']);
+    }
+
+    public function test_is_scheduled_monthly(): void
+    {
+        $schedule = app(Schedule::class);
+        $found = collect($schedule->events())->first(
+            fn ($e) => str_contains($e->command ?? '', 'streaming:tmdb-backstop'));
+        $this->assertNotNull($found, 'streaming:tmdb-backstop should be scheduled');
+        $this->assertSame('0 11 1 * *', $found->expression); // monthly, 1st, 11:00 UTC
     }
 
     public function test_skips_titles_that_already_have_a_netflix_offer(): void
