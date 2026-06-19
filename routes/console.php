@@ -44,3 +44,7 @@ Schedule::command('ops:nightly-digest')->dailyAt('11:00');
 // our offer table and fill in Netflix offers MOTN missed (off-peak from the daily
 // 09:00 pipeline; reads TMDB (free) + a bounded set of Kids searches).
 Schedule::command('streaming:tmdb-backstop')->monthlyOn(1, '11:00')->withoutOverlapping();
+
+// Weekly Netflix-Kids catalog browse: enumerate the live Kids catalog and fill in
+// offers MOTN missed (off-peak; additive — never un-marks). Saturday 11:00 UTC.
+Schedule::command('streaming:discover-netflix')->weeklyOn(6, '11:00')->withoutOverlapping();

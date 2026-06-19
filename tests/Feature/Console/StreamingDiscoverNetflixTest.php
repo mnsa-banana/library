@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Console;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -90,5 +91,14 @@ class StreamingDiscoverNetflixTest extends TestCase
         $meta = json_decode(DB::table('streaming_sync_log')
             ->where('sync_type', 'discover_netflix')->latest('id')->value('metadata'), true);
         $this->assertContains('Brand New Original', collect($meta['unmatched'] ?? [])->pluck('title')->all());
+    }
+
+    public function test_is_scheduled_weekly(): void
+    {
+        $schedule = app(Schedule::class);
+        $found = collect($schedule->events())->first(
+            fn ($e) => str_contains($e->command ?? '', 'streaming:discover-netflix'));
+        $this->assertNotNull($found, 'streaming:discover-netflix should be scheduled');
+        $this->assertSame('0 11 * * 6', $found->expression); // Saturday 11:00 UTC
     }
 }
