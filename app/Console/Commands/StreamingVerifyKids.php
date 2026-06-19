@@ -236,6 +236,8 @@ class StreamingVerifyKids extends Command
                 // Self-clean: a title verify-kids just confirmed is NOT in Netflix Kids has no
                 // business carrying a speculative discovery offer — drop it (MOTN offers, which
                 // own real availability, are untouched). Bounds discovery-offer growth.
+                // $pendingFalse covers BOTH search-misses and above-maturity-ceiling prunes —
+                // both mean "not in Kids", so both correctly self-clean a discovery offer.
                 DB::table('streaming_title_offers')->whereIn('title_id', $pendingFalse)
                     ->where('service_id', 'netflix')->where('region', 'US')->where('source', 'discovery')
                     ->delete();
