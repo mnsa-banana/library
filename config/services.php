@@ -63,6 +63,12 @@ return [
         // Default refresh horizon: a no-flag run re-verifies titles older than this
         // (and skips more-recently-checked ones, so an aborted run resumes).
         'default_stale_days' => (int) env('NETFLIX_KIDS_DEFAULT_STALE_DAYS', 14),
+        // Genres enumerated by streaming:discover-netflix. "all films" (34399) and
+        // "all TV" (83) give near-complete coverage with a known content type per genre.
+        'browse_genres' => [
+            ['id' => 34399, 'type' => 'movie'],
+            ['id' => 83, 'type' => 'series'],
+        ],
     ],
 
     'tmdb' => [
