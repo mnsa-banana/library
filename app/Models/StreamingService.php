@@ -26,6 +26,17 @@ class StreamingService extends Model
     private static array $ensuredIds = [];
 
     /**
+     * Forget the in-process "ensured" cache. Needed wherever the cache could
+     * outlive the underlying rows it assumes exist — primarily test isolation
+     * (the static survives a RefreshDatabase rollback), but also long-running
+     * workers that want to re-verify seeding after a DB reset.
+     */
+    public static function clearEnsuredCache(): void
+    {
+        self::$ensuredIds = [];
+    }
+
+    /**
      * Ensure a streaming_services row exists for a service object embedded in a
      * show payload, creating it from the payload's metadata when missing.
      *
