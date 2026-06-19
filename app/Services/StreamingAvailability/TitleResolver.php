@@ -11,11 +11,19 @@ use Illuminate\Support\Facades\DB;
  */
 class TitleResolver
 {
-    /** @var array<string, list<array{id:string, type:string, norm:string, tokens:list<string>}>>|null exact-norm => candidates */
+    /**
+     * The candidate data, stored ONCE. Both lookups below hold integer indices
+     * into this list rather than copies of the candidate arrays.
+     *
+     * @var list<array{id:string, type:string, norm:string, tokens:list<string>}>|null
+     */
+    private ?array $candidates = null;
+
+    /** @var array<string, list<int>>|null exact-norm => candidate indices (Pass 1) */
     private ?array $byNorm = null;
 
-    /** @var list<array{id:string, type:string, norm:string, tokens:list<string>}>|null flat list for containment */
-    private ?array $all = null;
+    /** @var array<string, list<int>>|null token => candidate indices (Pass 2 inverted index) */
+    private ?array $byToken = null;
 
     public function resolve(string $title, string $type): ?string
     {
@@ -30,9 +38,9 @@ class TitleResolver
         }
 
         // Pass 1: exact normalized title, same type only.
-        foreach ($this->byNorm[$want] ?? [] as $c) {
-            if ($c['type'] === $type) {
-                return $c['id'];
+        foreach ($this->byNorm[$want] ?? [] as $i) {
+            if ($this->candidates[$i]['type'] === $type) {
+                return $this->candidates[$i]['id'];
             }
         }
 
@@ -50,8 +58,24 @@ class TitleResolver
         // must appear as a contiguous run of whole tokens inside the longer
         // title's tokens. We also reject ambiguity (≥2 distinct matches → null)
         // so the command logs it for human review rather than guessing.
+        //
+        // Candidate gathering uses the inverted token index instead of scanning
+        // all ~115k titles: a whole-token contiguous-sublist match (in either
+        // direction) implies the candidate shares at least one token with
+        // $wantTokens, so the complete candidate set is the deduplicated union of
+        // $byToken[$tok] over each $tok in $wantTokens. No real match can fall
+        // outside this set, so results are identical to the old full scan; only
+        // the examined set shrinks.
+        $seen = [];
+        foreach ($wantTokens as $tok) {
+            foreach ($this->byToken[$tok] ?? [] as $i) {
+                $seen[$i] = true;
+            }
+        }
+
         $matchedIds = [];
-        foreach ($this->all as $c) {
+        foreach (array_keys($seen) as $i) {
+            $c = $this->candidates[$i];
             if ($c['type'] !== $type) {
                 continue;
             }
@@ -146,11 +170,12 @@ class TitleResolver
 
     private function ensureLoaded(): void
     {
-        if ($this->all !== null) {
+        if ($this->candidates !== null) {
             return;
         }
+        $this->candidates = [];
         $this->byNorm = [];
-        $this->all = [];
+        $this->byToken = [];
         DB::table('streaming_titles')->select('id', 'title', 'show_type')
             ->orderBy('id')->chunk(5000, function ($rows) {
                 foreach ($rows as $r) {
@@ -158,14 +183,21 @@ class TitleResolver
                     if ($norm === '') {
                         continue;
                     }
+                    $tokens = $this->tokenize($r->title);
                     $c = [
                         'id' => $r->id,
                         'type' => $r->show_type,
                         'norm' => $norm,
-                        'tokens' => $this->tokenize($r->title),
+                        'tokens' => $tokens,
                     ];
-                    $this->byNorm[$c['norm']][] = $c;
-                    $this->all[] = $c;
+                    // Store the candidate ONCE; both indices hold its integer
+                    // index $i into $this->candidates.
+                    $i = count($this->candidates);
+                    $this->candidates[] = $c;
+                    $this->byNorm[$norm][] = $i;
+                    foreach ($tokens as $tok) {
+                        $this->byToken[$tok][] = $i;
+                    }
                 }
             });
     }

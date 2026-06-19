@@ -68,4 +68,21 @@ class TitleResolverTest extends TestCase
         $r = new TitleResolver;
         $this->assertNull($r->resolve('Paw Patrol', 'movie'));
     }
+
+    public function test_containment_match_when_query_is_longer_than_db_title(): void
+    {
+        // DB title is SHORTER than the query; the match must still be found via
+        // the token index (Case-B direction: candidate tokens ⊂ query tokens).
+        $this->title('i', 'Paw Patrol', 'movie');
+        $r = new TitleResolver;
+        $this->assertSame('i', $r->resolve('Paw Patrol The Movie', 'movie'));
+    }
+
+    public function test_no_match_when_no_shared_token(): void
+    {
+        // No shared token → token-gather yields an empty candidate set → null.
+        $this->title('j', 'Coconut', 'movie');
+        $r = new TitleResolver;
+        $this->assertNull($r->resolve('Bluey', 'movie'));
+    }
 }
