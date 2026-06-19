@@ -202,10 +202,20 @@ class NetflixKidsClient
             return reset($exact)['videoId'];
         }
 
-        // Pass 2: containment (handles subtitle variants), same type only.
+        // Pass 2: containment (handles subtitle variants like "Paw Patrol: The Movie" → "paw patrol"),
+        // same type only. Guard with a length-ratio check so short words (e.g. "prince") don't
+        // spuriously match as substrings of longer unrelated titles ("theswanprincess").
         foreach ($results as $r) {
             $rn = $norm($r['title']);
-            if ($r['type'] === $type && $rn !== '' && (str_contains($rn, $want) || str_contains($want, $rn))) {
+            if ($r['type'] !== $type || $rn === '') {
+                continue;
+            }
+            $shorter = min(strlen($want), strlen($rn));
+            $longer = max(strlen($want), strlen($rn));
+            if ($shorter / $longer < 0.5) {
+                continue; // too different in length — likely a coincidental substring, not a subtitle variant
+            }
+            if (str_contains($rn, $want) || str_contains($want, $rn)) {
                 return $r['videoId'];
             }
         }
