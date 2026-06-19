@@ -176,11 +176,20 @@ class StreamingBackfill extends Command
         // mid-loop failure would leave the title with the old offers deleted and
         // only a partial set re-inserted (silent data loss).
         DB::transaction(function () use ($show, $usOptions) {
-            // Preserve upcoming rows (available_from IS NOT NULL) for services that
-            // haven't dropped yet — they're not in this response's streamingOptions.
+            // Services MOTN reports in THIS response. Clear MOTN's own active offers
+            // always, plus discovery offers ONLY for services MOTN now covers, so
+            // discovery offers for services MOTN doesn't report survive;
+            // available_from IS NULL preserves upcoming.
+            $motnServices = array_values(array_filter(array_map(
+                fn ($o) => $o['service']['id'] ?? null, $usOptions)));
+
             StreamingTitleOffer::where('title_id', $show['id'])
                 ->where('region', 'US')
                 ->whereNull('available_from')
+                ->where(function ($q) use ($motnServices) {
+                    $q->where('source', 'motn')
+                        ->orWhere(fn ($w) => $w->where('source', 'discovery')->whereIn('service_id', $motnServices));
+                })
                 ->delete();
 
             foreach ($usOptions as $opt) {
@@ -205,6 +214,7 @@ class StreamingBackfill extends Command
                         'price_amount' => $price['amount'] ?? null,
                         'price_currency' => $price['currency'] ?? null,
                         'expires_on' => $expiresOn,
+                        'source' => 'motn',
                     ],
                 );
             }
