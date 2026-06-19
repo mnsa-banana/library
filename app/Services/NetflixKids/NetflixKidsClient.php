@@ -191,20 +191,19 @@ class NetflixKidsClient
 
         $results = $this->searchResults($title, $appVersion);
 
-        // Pass 1: exact normalized title, preferring same type.
-        $exact = array_filter($results, fn ($r) => $norm($r['title']) === $want);
-        foreach ($exact as $r) {
-            if ($r['type'] === $type) {
+        // Pass 1: exact normalized title, same type only.
+        // Conservative: if the exact-title match is a different type, do NOT return it — fall through.
+        foreach ($results as $r) {
+            if ($norm($r['title']) === $want && $r['type'] === $type) {
                 return $r['videoId'];
             }
-        }
-        if ($exact) {
-            return reset($exact)['videoId'];
         }
 
         // Pass 2: containment (handles subtitle variants like "Paw Patrol: The Movie" → "paw patrol"),
         // same type only. Guard with a length-ratio check so short words (e.g. "prince") don't
         // spuriously match as substrings of longer unrelated titles ("theswanprincess").
+        // Additional guard: reject numeric-sequel matches where one string is a prefix of the other
+        // and the remaining suffix starts with a digit (e.g. "frozen" ⊂ "frozen2" → reject).
         foreach ($results as $r) {
             $rn = $norm($r['title']);
             if ($r['type'] !== $type || $rn === '') {
@@ -216,6 +215,13 @@ class NetflixKidsClient
                 continue; // too different in length — likely a coincidental substring, not a subtitle variant
             }
             if (str_contains($rn, $want) || str_contains($want, $rn)) {
+                // Reject numeric-sequel collisions: "frozen"→"frozen2", "frozen2"→"frozen20", etc.
+                if (str_starts_with($rn, $want) && preg_match('/^\d/', substr($rn, strlen($want)))) {
+                    continue;
+                }
+                if (str_starts_with($want, $rn) && preg_match('/^\d/', substr($want, strlen($rn)))) {
+                    continue;
+                }
                 return $r['videoId'];
             }
         }

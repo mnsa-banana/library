@@ -76,4 +76,34 @@ class NetflixSearchResolveTest extends TestCase
 
         $this->assertNull((new NetflixKidsClient())->resolveKidsVideoId('Prince', 'movie', 'v1'));
     }
+
+    public function test_resolve_rejects_sequel_for_base_title_lookup(): void
+    {
+        $this->cfg();
+        $this->fakeSearch([
+            ['title' => 'Frozen 2', 'type' => 'Movie', 'id' => 222, 'mat' => 70],
+        ]);
+        // "Frozen" must NOT resolve to "Frozen 2".
+        $this->assertNull((new NetflixKidsClient())->resolveKidsVideoId('Frozen', 'movie', 'v1'));
+    }
+
+    public function test_resolve_rejects_exact_title_of_wrong_type(): void
+    {
+        $this->cfg();
+        $this->fakeSearch([
+            ['title' => 'Matilda', 'type' => 'Show', 'id' => 333, 'mat' => 70],
+        ]);
+        // A MOVIE lookup must not return a SHOW with the same title.
+        $this->assertNull((new NetflixKidsClient())->resolveKidsVideoId('Matilda', 'movie', 'v1'));
+    }
+
+    public function test_resolve_still_matches_legit_prefix_variant_same_type(): void
+    {
+        $this->cfg();
+        $this->fakeSearch([
+            ['title' => "We're Lalaloopsy", 'type' => 'Show', 'id' => 444, 'mat' => 70],
+        ]);
+        // want 'lalaloopsy' is a (suffix) substring of 'werelalaloopsy', same type → still matches.
+        $this->assertSame(444, (new NetflixKidsClient())->resolveKidsVideoId('Lalaloopsy', 'series', 'v1'));
+    }
 }
