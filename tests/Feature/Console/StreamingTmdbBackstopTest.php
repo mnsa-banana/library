@@ -66,6 +66,47 @@ class StreamingTmdbBackstopTest extends TestCase
         ]);
     }
 
+    public function test_creates_discovery_offer_for_ad_tier_only_netflix_title(): void
+    {
+        // TMDB surfaces ad-tier Netflix (provider 1796) under the `ads` bucket,
+        // never `flatrate`; the backstop must still match it.
+        $this->title('m5', 700, 'Ad Tier Only');
+        Http::fake([
+            'api.themoviedb.org/3/movie/700/watch/providers*' => Http::response(
+                ['results' => ['US' => ['ads' => [['provider_id' => 1796, 'provider_name' => 'Netflix Standard with Ads']]]]], 200),
+            'www.netflix.com/Kids' => Http::response($this->kidsHtml(), 200),
+            'web.prod.cloud.netflix.com/graphql' => Http::response(
+                '{"data":{"search":{"edges":['.$this->searchEntity('Ad Tier Only', 'Movie', 80123456).']}}}', 200),
+        ]);
+
+        $this->artisan('streaming:tmdb-backstop')->assertExitCode(0);
+
+        $this->assertDatabaseHas('streaming_title_offers', [
+            'title_id' => 'm5', 'service_id' => 'netflix', 'region' => 'US',
+            'type' => 'subscription', 'source' => 'discovery',
+            'link' => 'https://www.netflix.com/title/80123456/',
+        ]);
+    }
+
+    public function test_fails_when_session_app_version_missing(): void
+    {
+        // Kids HTML without a BUILD_IDENTIFIER → probeSession yields app_version=null.
+        // The run must fail (not "completed" with 0 created) and create no offers.
+        $this->title('m6', 800, 'Stale Session');
+        Http::fake([
+            'www.netflix.com/Kids' => Http::response(
+                '<body data-uia="container-kids">"currentCountry":"US","authURL":"auth",'
+                .'"memberapi":{"hostname":"www.netflix.com","path":["/nq/website/memberapi/release"]}</body>', 200),
+        ]);
+
+        $this->artisan('streaming:tmdb-backstop')->assertExitCode(1);
+
+        $this->assertDatabaseHas('streaming_sync_log', [
+            'sync_type' => 'tmdb_backstop', 'status' => 'failed',
+        ]);
+        $this->assertDatabaseMissing('streaming_title_offers', ['title_id' => 'm6', 'service_id' => 'netflix']);
+    }
+
     public function test_creates_no_offer_when_netflix_but_not_in_kids_catalog(): void
     {
         $this->title('m2', 999, 'Prince');

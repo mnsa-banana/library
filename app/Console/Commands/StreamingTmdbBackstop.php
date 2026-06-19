@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\StreamingSyncLog;
 use App\Models\StreamingTitle;
+use App\Models\StreamingTitleOffer;
 use App\Services\NetflixKids\NetflixKidsClient;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -38,9 +39,10 @@ class StreamingTmdbBackstop extends Command
 
         try {
             $session = $netflix->probeSession();
-            if (($session['country'] ?? null) !== 'US' || ! ($session['is_kids'] ?? false)) {
+            if (($session['country'] ?? null) !== 'US' || ! ($session['is_kids'] ?? false)
+                || empty($session['app_version'])) {
                 $log->update(['status' => 'failed', 'completed_at' => now(),
-                    'error_message' => 'not a US Kids session']);
+                    'error_message' => 'invalid US Kids session']);
                 $this->error('Netflix Kids session invalid.');
 
                 return self::FAILURE;
@@ -70,11 +72,7 @@ class StreamingTmdbBackstop extends Command
                     if ($videoId === null) {
                         continue; // on Netflix-US per TMDB but not in Kids (or unresolvable) — no offer (E8).
                     }
-                    DB::table('streaming_title_offers')->updateOrInsert(
-                        ['title_id' => $t->id, 'service_id' => 'netflix', 'region' => 'US',
-                            'type' => 'subscription', 'video_quality' => null],
-                        ['link' => "https://www.netflix.com/title/{$videoId}/", 'source' => 'discovery', 'updated_at' => now()],
-                    );
+                    StreamingTitleOffer::upsertDiscoveryNetflix($t->id, $videoId);
                     $created++;
                 }
             });
@@ -105,9 +103,11 @@ class StreamingTmdbBackstop extends Command
         if (! $resp->successful()) {
             return false;
         }
-        foreach ($resp->json('results.US.flatrate', []) as $p) {
-            if (in_array($p['provider_id'] ?? 0, self::NETFLIX_PROVIDER_IDS, true)) {
-                return true;
+        foreach (['flatrate', 'ads', 'flatrate_and_buy'] as $bucket) {
+            foreach ($resp->json("results.US.{$bucket}", []) as $p) {
+                if (in_array($p['provider_id'] ?? 0, self::NETFLIX_PROVIDER_IDS, true)) {
+                    return true;
+                }
             }
         }
 
