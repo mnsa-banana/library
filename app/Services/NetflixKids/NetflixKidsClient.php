@@ -117,6 +117,74 @@ class NetflixKidsClient
         return $out;
     }
 
+    /**
+     * Walk a genre's standard ("su") list via the member-API pathEvaluator,
+     * 50 ids per page, until a page returns no video refs.
+     *
+     * @return int[] distinct video ids
+     */
+    public function browseGenreVideoIds(int $genreId, string $memberApiUrl, string $authUrl): array
+    {
+        $ids = [];
+        // 10000 is a safety cap, not the expected terminator: the short-page break
+        // below normally ends the walk. This just bounds a pathological response
+        // that keeps returning full 50-id pages without ever shrinking.
+        for ($from = 0; $from < 10000; $from += 50) {
+            $path = json_encode(['genres', $genreId, 'su', ['from' => $from, 'to' => $from + 49], 'reference', ['title']]);
+            $resp = $this->memberFalcor([$path], $memberApiUrl, $authUrl);
+            preg_match_all('/\["videos","(\d+)"\]/', $resp->body(), $m);
+            if (! $m[1]) {
+                break;
+            }
+            foreach ($m[1] as $id) {
+                $ids[(int) $id] = true;
+            }
+            if (count($m[1]) < 50) {
+                break;
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /**
+     * Batch-resolve video ids to titles via the member-API pathEvaluator.
+     *
+     * @param  int[]  $videoIds
+     * @return array<int,string> videoId => title
+     */
+    public function resolveVideoTitles(array $videoIds, string $memberApiUrl, string $authUrl): array
+    {
+        $out = [];
+        foreach (array_chunk($videoIds, 48) as $chunk) {
+            $paths = array_map(fn ($id) => json_encode(['videos', (int) $id, 'title']), $chunk);
+            $resp = $this->memberFalcor($paths, $memberApiUrl, $authUrl);
+            $videos = $resp->json('jsonGraph.videos', []);
+            foreach ($chunk as $id) {
+                $title = $videos[(string) $id]['title']['value'] ?? null;
+                if (is_string($title) && $title !== '') {
+                    $out[(int) $id] = $title;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** Form-encoded falcor POST to the member-API pathEvaluator (shared by browse + maturity). */
+    private function memberFalcor(array $encodedPaths, string $memberApiUrl, string $authUrl): Response
+    {
+        return $this->sendWithRetry(fn () => Http::asForm()
+            ->withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
+            ->timeout(30)
+            ->withBody(
+                http_build_query(['authURL' => $authUrl]).'&'
+                .implode('&', array_map(fn ($p) => 'path='.urlencode($p), $encodedPaths)),
+                'application/x-www-form-urlencoded'
+            )
+            ->post(rtrim($memberApiUrl, '/').'/pathEvaluator?original_path='.rawurlencode(self::PATH_EVALUATOR_ORIGINAL_PATH)));
+    }
+
     private function searchTemplate(): array
     {
         if ($this->searchTemplate === null) {
@@ -222,6 +290,7 @@ class NetflixKidsClient
                 if (str_starts_with($want, $rn) && preg_match('/^\d/', substr($want, strlen($rn)))) {
                     continue;
                 }
+
                 return $r['videoId'];
             }
         }
