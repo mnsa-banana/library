@@ -1,0 +1,79 @@
+<?php
+
+namespace Tests\Unit\Services\NetflixKids;
+
+use App\Services\NetflixKids\NetflixKidsClient;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+class NetflixSearchResolveTest extends TestCase
+{
+    private function cfg(): void
+    {
+        config()->set('services.netflix_kids.cookie', 'NetflixId=abc');
+        config()->set('services.netflix_kids.persisted_query_id', 'pq');
+        config()->set('services.netflix_kids.persisted_query_version', 102);
+        config()->set('services.netflix_kids.retry_sleep_ms', 0);
+    }
+
+    private function fakeSearch(array $entities): void
+    {
+        $blobs = array_map(fn ($e) => '{"__typename":"PinotSuggestionEntityTreatment",'
+            .'"displayString":"'.$e['title'].'",'
+            .'"unifiedEntity":{"__typename":"'.$e['type'].'","unifiedEntityId":"Video:'.$e['id'].'",'
+            .'"contentAdvisory":{"__typename":"ContentAdvisory","maturityLevel":'.$e['mat'].'},'
+            .'"videoId":'.$e['id'].'}}', $entities);
+
+        Http::fake([
+            'www.netflix.com/Kids' => Http::response($this->goodKidsHtml(), 200),
+            'web.prod.cloud.netflix.com/graphql' => Http::response(
+                '{"data":{"search":{"edges":['.implode(',', $blobs).']}}}', 200),
+        ]);
+    }
+
+    private function goodKidsHtml(): string
+    {
+        return '<body data-uia="container-kids">"currentCountry":"US",'
+            .'"authURL":"auth","memberapi":{"hostname":"www.netflix.com",'
+            .'"path":["/nq/website/memberapi/release"]},"BUILD_IDENTIFIER":"v6c030968"</body>';
+    }
+
+    public function test_search_results_parses_video_id_title_type_maturity(): void
+    {
+        $this->cfg();
+        $this->fakeSearch([
+            ['title' => 'Percy Jackson: Sea of Monsters', 'type' => 'Movie', 'id' => 70243343, 'mat' => 70],
+            ['title' => 'Raising Dion', 'type' => 'Show', 'id' => 80117803, 'mat' => 70],
+        ]);
+
+        $results = (new NetflixKidsClient())->searchResults('Percy Jackson', 'v1');
+
+        $this->assertCount(2, $results);
+        $this->assertSame(70243343, $results[0]['videoId']);
+        $this->assertSame('Percy Jackson: Sea of Monsters', $results[0]['title']);
+        $this->assertSame('movie', $results[0]['type']);
+        $this->assertSame(70, $results[0]['maturity']);
+        $this->assertSame('series', $results[1]['type']);
+    }
+
+    public function test_resolve_returns_video_id_for_exact_normalized_title_match(): void
+    {
+        $this->cfg();
+        $this->fakeSearch([
+            ['title' => 'Percy Jackson: Sea of Monsters', 'type' => 'Movie', 'id' => 70243343, 'mat' => 70],
+        ]);
+
+        $id = (new NetflixKidsClient())->resolveKidsVideoId('percy jackson sea of monsters', 'movie', 'v1');
+        $this->assertSame(70243343, $id);
+    }
+
+    public function test_resolve_returns_null_when_no_title_matches(): void
+    {
+        $this->cfg();
+        $this->fakeSearch([
+            ['title' => 'Completely Different Show', 'type' => 'Show', 'id' => 111, 'mat' => 70],
+        ]);
+
+        $this->assertNull((new NetflixKidsClient())->resolveKidsVideoId('Prince', 'movie', 'v1'));
+    }
+}

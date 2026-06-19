@@ -131,6 +131,88 @@ class NetflixKidsClient
         return $this->searchTemplate;
     }
 
+    /**
+     * Run a Kids-catalog search and parse the result entities.
+     *
+     * @return list<array{videoId:int, title:string, type:string, maturity:?int}>
+     */
+    public function searchResults(string $term, string $appVersion): array
+    {
+        $body = $this->searchTemplate();
+        $body['variables']['searchTerm'] = $term;
+        $body['variables']['endCursor'] = null;
+
+        $resp = $this->sendWithRetry(fn () => Http::withHeaders([
+            'User-Agent' => self::UA,
+            'Cookie' => $this->cookie,
+            'Content-Type' => 'application/json',
+            'x-netflix.context.operation-name' => 'SearchPageQueryResults',
+            'x-netflix.context.app-version' => $appVersion,
+            'x-netflix.context.ui-flavor' => 'akira',
+            'x-netflix.context.locales' => 'en-us',
+            'Origin' => 'https://www.netflix.com',
+            'Referer' => 'https://www.netflix.com/Kids/search',
+        ])->timeout(30)
+            ->withBody(json_encode($body), 'application/json')
+            ->post(self::GRAPHQL_URL));
+
+        // Each result entity: "displayString":"<title>","unifiedEntity":{"__typename":
+        // "Movie|Show","unifiedEntityId":"Video:<id>","contentAdvisory":{…"maturityLevel":<n>},"videoId":<id>}
+        preg_match_all(
+            '/"displayString":"([^"]+)","unifiedEntity":\{"__typename":"(Movie|Show)",'
+            .'"unifiedEntityId":"Video:(\d+)","contentAdvisory":\{[^{}]*"maturityLevel":(\d+)\}/',
+            $resp->body(), $m, PREG_SET_ORDER);
+
+        $out = [];
+        foreach ($m as $row) {
+            $out[] = [
+                'videoId' => (int) $row[3],
+                'title' => $row[1],
+                'type' => $row[2] === 'Movie' ? 'movie' : 'series',
+                'maturity' => (int) $row[4],
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Resolve a title to its Netflix Kids videoId, or null if it doesn't surface.
+     * Exact normalized-title match first (preferring a type match), then a
+     * subtitle-tolerant containment fallback. Conservative: null on no confident match.
+     */
+    public function resolveKidsVideoId(string $title, string $type, string $appVersion): ?int
+    {
+        $norm = fn (string $s): string => preg_replace('/[^a-z0-9]+/', '', strtolower($s));
+        $want = $norm($title);
+        if ($want === '') {
+            return null;
+        }
+
+        $results = $this->searchResults($title, $appVersion);
+
+        // Pass 1: exact normalized title, preferring same type.
+        $exact = array_filter($results, fn ($r) => $norm($r['title']) === $want);
+        foreach ($exact as $r) {
+            if ($r['type'] === $type) {
+                return $r['videoId'];
+            }
+        }
+        if ($exact) {
+            return reset($exact)['videoId'];
+        }
+
+        // Pass 2: containment (handles subtitle variants), same type only.
+        foreach ($results as $r) {
+            $rn = $norm($r['title']);
+            if ($r['type'] === $type && $rn !== '' && (str_contains($rn, $want) || str_contains($want, $rn))) {
+                return $r['videoId'];
+            }
+        }
+
+        return null;
+    }
+
     public function searchHasId(string $title, int $netflixId, string $appVersion): bool
     {
         $body = $this->searchTemplate();
