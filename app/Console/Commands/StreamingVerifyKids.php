@@ -233,6 +233,12 @@ class StreamingVerifyKids extends Command
             if ($pendingFalse) {
                 DB::table('streaming_titles')->whereIn('id', $pendingFalse)
                     ->update(['netflix_kids_surfaced' => false, 'netflix_kids_checked_at' => $now]);
+                // Self-clean: a title verify-kids just confirmed is NOT in Netflix Kids has no
+                // business carrying a speculative discovery offer — drop it (MOTN offers, which
+                // own real availability, are untouched). Bounds discovery-offer growth.
+                DB::table('streaming_title_offers')->whereIn('title_id', $pendingFalse)
+                    ->where('service_id', 'netflix')->where('region', 'US')->where('source', 'discovery')
+                    ->delete();
                 $pendingFalse = [];
             }
             if ($pendingNull) {

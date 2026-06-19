@@ -296,6 +296,52 @@ class StreamingVerifyKidsTest extends TestCase
         $this->assertStringContainsString('not surfaced', $row->error_message);
     }
 
+    public function test_deletes_discovery_offer_when_title_no_longer_surfaces_but_keeps_motn(): void
+    {
+        $this->cfg();
+        // A title with a Netflix offer whose maturity is under the ceiling but which
+        // does NOT surface in the Kids search → verify-kids marks it not-surfaced.
+        $this->seedTitle('t-disc', 'Vanished Kids Show', '55555');
+        DB::table('streaming_title_offers')->where('title_id', 't-disc')
+            ->where('service_id', 'netflix')->update(['source' => 'discovery']);
+
+        $maturity = $this->anchorMaturity() + ['55555' => self::maturityAtom(40)]; // under ceiling
+        $this->fakeNetflix($this->goodKidsHtml(), $maturity, [
+            "gabby's dollhouse" => [81009946],
+            'storybots' => [81474560],
+            'seinfeld' => [],
+            'Vanished Kids Show' => [], // does NOT surface
+        ]);
+
+        $this->artisan('streaming:verify-kids', ['--force' => true])->assertExitCode(0);
+
+        $this->assertDatabaseMissing('streaming_title_offers',
+            ['title_id' => 't-disc', 'service_id' => 'netflix']);
+        $this->assertSame(false, (bool) DB::table('streaming_titles')->where('id', 't-disc')->value('netflix_kids_surfaced'));
+    }
+
+    public function test_keeps_discovery_offer_when_title_still_surfaces(): void
+    {
+        $this->cfg();
+        $this->seedTitle('t-live', 'Still On Kids', '66666');
+        DB::table('streaming_title_offers')->where('title_id', 't-live')
+            ->where('service_id', 'netflix')->update(['source' => 'discovery']);
+
+        $maturity = $this->anchorMaturity() + ['66666' => self::maturityAtom(40)];
+        $this->fakeNetflix($this->goodKidsHtml(), $maturity, [
+            "gabby's dollhouse" => [81009946],
+            'storybots' => [81474560],
+            'seinfeld' => [],
+            'Still On Kids' => [66666], // surfaces
+        ]);
+
+        $this->artisan('streaming:verify-kids', ['--force' => true])->assertExitCode(0);
+
+        $this->assertDatabaseHas('streaming_title_offers',
+            ['title_id' => 't-live', 'service_id' => 'netflix', 'source' => 'discovery']);
+        $this->assertSame(true, (bool) DB::table('streaming_titles')->where('id', 't-live')->value('netflix_kids_surfaced'));
+    }
+
     public function test_writes_failed_row_and_rethrows_on_uncaught_exception(): void
     {
         // Covers the outer catch (\Throwable $e) in handle() — the branch that writes
