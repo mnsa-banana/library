@@ -79,21 +79,13 @@ class StreamingDiscoverNetflix extends Command
                 }
             }
 
-            // Growth bound: drop discovery offers for titles verify-kids has confirmed are NOT
-            // surfaced on Netflix Kids. Safe — never touches surfaced=true or not-yet-checked (null).
-            $reaped = DB::table('streaming_title_offers')
-                ->where('service_id', 'netflix')->where('region', 'US')->where('source', 'discovery')
-                ->whereIn('title_id', fn ($q) => $q->select('id')->from('streaming_titles')
-                    ->where('netflix_kids_surfaced', false))
-                ->delete();
-
             $log->update([
                 'status' => 'completed', 'completed_at' => now(), 'titles_processed' => $created,
                 'metadata' => ['offers_created' => $created, 'offers_restamped' => $restamped,
-                    'motn_owned_skipped' => $skipped, 'reaped_not_surfaced' => $reaped,
+                    'motn_owned_skipped' => $skipped,
                     'unmatched_count' => count($unmatched), 'unmatched' => array_slice($unmatched, 0, 200)],
             ]);
-            $this->info("created={$created} restamped={$restamped} motn_skipped={$skipped} reaped={$reaped} unmatched=".count($unmatched));
+            $this->info("created={$created} restamped={$restamped} motn_skipped={$skipped} unmatched=".count($unmatched));
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

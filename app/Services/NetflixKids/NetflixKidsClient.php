@@ -206,6 +206,10 @@ class NetflixKidsClient
     /**
      * Run a Kids-catalog search and parse the result entities.
      *
+     * Maturity is best-effort: captured single-pass as an optional trailing group
+     * only when a flat `contentAdvisory` immediately follows the entity id; null
+     * when contentAdvisory is nested or absent. Entity capture is the guarantee.
+     *
      * @return list<array{videoId:int, title:string, type:string, maturity:?int}>
      */
     public function searchResults(string $term, string $appVersion): array
@@ -231,25 +235,21 @@ class NetflixKidsClient
         // Primary: capture EVERY entity (title, type, videoId) — independent of contentAdvisory shape.
         // A maturity sub-match must never gate entity capture, or a real Kids title becomes
         // unresolvable if Netflix reshapes contentAdvisory (e.g. nests an object before maturityLevel).
+        // Maturity is folded in as an OPTIONAL trailing group: captured in lockstep when a flat
+        // contentAdvisory immediately follows the entity id, null otherwise (single-pass, no O(n²)).
         preg_match_all(
-            '/"displayString":"([^"]+)","unifiedEntity":\{"__typename":"(Movie|Show)","unifiedEntityId":"Video:(\d+)"/',
+            '/"displayString":"([^"]+)","unifiedEntity":\{"__typename":"(Movie|Show)",'
+            .'"unifiedEntityId":"Video:(\d+)"'
+            .'(?:,"contentAdvisory":\{[^{}]*"maturityLevel":(\d+)\})?/',
             $resp->body(), $m, PREG_SET_ORDER);
 
-        $body = $resp->body();
         $out = [];
         foreach ($m as $row) {
-            $videoId = (int) $row[3];
-            // Best-effort maturity: nearest maturityLevel within a bounded window after this
-            // entity's id (char-bounded, so it tolerates nested objects). Null if absent.
-            $maturity = null;
-            if (preg_match('/"unifiedEntityId":"Video:'.$videoId.'".{0,400}?"maturityLevel":(\d+)/s', $body, $mm)) {
-                $maturity = (int) $mm[1];
-            }
             $out[] = [
-                'videoId' => $videoId,
+                'videoId' => (int) $row[3],
                 'title' => $row[1],
                 'type' => $row[2] === 'Movie' ? 'movie' : 'series',
-                'maturity' => $maturity,
+                'maturity' => (isset($row[4]) && $row[4] !== '') ? (int) $row[4] : null,
             ];
         }
 

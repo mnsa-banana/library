@@ -69,8 +69,10 @@ class NetflixSearchResolveTest extends TestCase
     public function test_search_captures_entity_despite_nested_content_advisory(): void
     {
         $this->cfg();
-        // contentAdvisory nests an object ("reason") BEFORE maturityLevel — the old
-        // [^{}]* regex couldn't cross the nested '{' and would drop the whole entity.
+        // contentAdvisory nests an object ("reason") BEFORE maturityLevel. The single-pass
+        // optional group ([^{}]* can't cross the nested '{') can't parse maturity here, so
+        // maturity is null — but the ENTITY is still captured (the guarantee). A real Kids
+        // title must never become unresolvable when Netflix reshapes contentAdvisory.
         $this->fakeSearchRaw([
             '{"__typename":"PinotSuggestionEntityTreatment",'
             .'"displayString":"Nested Advisory Movie",'
@@ -85,6 +87,26 @@ class NetflixSearchResolveTest extends TestCase
         $this->assertSame(555, $results[0]['videoId']);
         $this->assertSame('Nested Advisory Movie', $results[0]['title']);
         $this->assertSame('movie', $results[0]['type']);
+        $this->assertNull($results[0]['maturity']);
+    }
+
+    public function test_search_captures_maturity_from_flat_content_advisory(): void
+    {
+        $this->cfg();
+        // Flat contentAdvisory (maturityLevel reachable with no nested object before it)
+        // → maturity captured single-pass as the int.
+        $this->fakeSearchRaw([
+            '{"__typename":"PinotSuggestionEntityTreatment",'
+            .'"displayString":"Flat Advisory Movie",'
+            .'"unifiedEntity":{"__typename":"Movie","unifiedEntityId":"Video:777",'
+            .'"contentAdvisory":{"maturityLevel":70},'
+            .'"videoId":777}}',
+        ]);
+
+        $results = (new NetflixKidsClient)->searchResults('Flat Advisory', 'v1');
+
+        $this->assertCount(1, $results);
+        $this->assertSame(777, $results[0]['videoId']);
         $this->assertSame(70, $results[0]['maturity']);
     }
 

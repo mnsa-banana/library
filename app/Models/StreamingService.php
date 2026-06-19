@@ -26,10 +26,9 @@ class StreamingService extends Model
     private static array $ensuredIds = [];
 
     /**
-     * Forget the in-process "ensured" cache. Needed wherever the cache could
-     * outlive the underlying rows it assumes exist — primarily test isolation
-     * (the static survives a RefreshDatabase rollback), but also long-running
-     * workers that want to re-verify seeding after a DB reset.
+     * Reset the in-process "ensured" cache. The static survives a RefreshDatabase
+     * rollback, so tests must clear it between cases or a service ensured in one
+     * test makes a later test skip (re)inserting the rolled-back row.
      */
     public static function clearEnsuredCache(): void
     {

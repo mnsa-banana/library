@@ -24,6 +24,9 @@ class StreamingTmdbBackstop extends Command
 
     private const NETFLIX_PROVIDER_IDS = [8, 1796]; // Netflix, Netflix Standard with Ads (US)
 
+    /** TMDB watch-provider buckets that count as "streamable on Netflix" (flatrate + ad-tier). */
+    private const NETFLIX_PROVIDER_BUCKETS = ['flatrate', 'ads', 'flatrate_and_buy'];
+
     public function handle(NetflixKidsClient $netflix): int
     {
         $key = config('services.tmdb.api_key');
@@ -103,7 +106,7 @@ class StreamingTmdbBackstop extends Command
         if (! $resp->successful()) {
             return false;
         }
-        foreach (['flatrate', 'ads', 'flatrate_and_buy'] as $bucket) {
+        foreach (self::NETFLIX_PROVIDER_BUCKETS as $bucket) {
             foreach ($resp->json("results.US.{$bucket}", []) as $p) {
                 if (in_array($p['provider_id'] ?? 0, self::NETFLIX_PROVIDER_IDS, true)) {
                     return true;

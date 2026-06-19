@@ -53,4 +53,28 @@ class StreamingTitleOfferTest extends TestCase
         $this->assertCount(1, $offers);
         $this->assertSame('https://www.netflix.com/title/81009946/', $offers->first()->link);
     }
+
+    public function test_upsert_discovery_does_not_clobber_an_existing_motn_offer(): void
+    {
+        DB::table('streaming_services')->insert(['id' => 'netflix', 'name' => 'Netflix']);
+        DB::table('streaming_titles')->insert([
+            'id' => 'title-2', 'show_type' => 'movie', 'title' => 'MOTN Owned',
+        ]);
+
+        // A MOTN-owned offer at the same source-excluding unique key
+        // (title_id, service_id, region, type, video_quality=null).
+        DB::table('streaming_title_offers')->insert([
+            'title_id' => 'title-2', 'service_id' => 'netflix', 'region' => 'US',
+            'type' => 'subscription', 'video_quality' => null,
+            'link' => 'https://www.netflix.com/title/1/', 'source' => 'motn', 'updated_at' => now(),
+        ]);
+
+        StreamingTitleOffer::upsertDiscoveryNetflix('title-2', 999);
+
+        // The discovery write must have been ignored — MOTN owns the key.
+        $offers = DB::table('streaming_title_offers')->where('title_id', 'title-2')->get();
+        $this->assertCount(1, $offers);
+        $this->assertSame('motn', $offers->first()->source);
+        $this->assertSame('https://www.netflix.com/title/1/', $offers->first()->link);
+    }
 }

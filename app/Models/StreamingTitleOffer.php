@@ -76,10 +76,24 @@ class StreamingTitleOffer extends Model
      */
     public static function upsertDiscoveryNetflix(string $titleId, int $videoId): void
     {
-        DB::table('streaming_title_offers')->updateOrInsert(
-            ['title_id' => $titleId, 'service_id' => 'netflix', 'region' => 'US',
-                'type' => 'subscription', 'video_quality' => null],
-            ['link' => self::netflixTitleLink($videoId), 'source' => 'discovery', 'updated_at' => now()],
-        );
+        $key = [
+            'title_id' => $titleId, 'service_id' => 'netflix', 'region' => 'US',
+            'type' => 'subscription', 'video_quality' => null,
+        ];
+
+        // Re-stamp an existing discovery offer (link may change if Netflix reassigns the id)...
+        $updated = DB::table('streaming_title_offers')->where($key)->where('source', 'discovery')
+            ->update(['link' => self::netflixTitleLink($videoId), 'updated_at' => now()]);
+
+        // ...otherwise insert a new one, but NEVER clobber a row owned by another source
+        // (e.g. a concurrently-written MOTN offer at this same source-excluding unique key).
+        // The unique index treats NULL video_quality as distinct (SQLite + Postgres), so it
+        // won't catch a null-quality collision for us — guard the insert with an existence
+        // check on the key, then insertOrIgnore to also close the concurrent-insert race.
+        if ($updated === 0 && ! DB::table('streaming_title_offers')->where($key)->exists()) {
+            DB::table('streaming_title_offers')->insertOrIgnore(array_merge($key, [
+                'link' => self::netflixTitleLink($videoId), 'source' => 'discovery', 'updated_at' => now(),
+            ]));
+        }
     }
 }

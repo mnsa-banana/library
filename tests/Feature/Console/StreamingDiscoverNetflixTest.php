@@ -109,39 +109,29 @@ class StreamingDiscoverNetflixTest extends TestCase
         $this->assertSame(0, $meta['offers_created']);
     }
 
-    public function test_sweeps_discovery_offer_for_not_surfaced_title(): void
+    public function test_does_not_reap_a_browse_present_title_marked_not_surfaced(): void
     {
-        // Title confirmed NOT surfaced by verify-kids, carrying a stale discovery offer.
+        // Regression: a title carrying a STALE netflix_kids_surfaced=false flag that
+        // reappears in the live browse this run. The old post-loop sweep would CREATE
+        // its discovery offer in the loop and then DELETE it in the same run (discover
+        // never updates the flag), making the title permanently invisible to verify-kids.
+        // The sweep is gone, so the freshly written discovery offer must survive.
         DB::table('streaming_titles')->insert([
-            'id' => 'gone', 'show_type' => 'movie', 'title' => 'No Longer In Kids',
+            'id' => 'stale', 'show_type' => 'movie', 'title' => 'Back In Kids',
             'netflix_kids_surfaced' => false, 'created_at' => now(), 'updated_at' => now(),
         ]);
-        DB::table('streaming_title_offers')->insert([
-            'title_id' => 'gone', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription',
-            'link' => 'https://www.netflix.com/title/700/', 'source' => 'discovery', 'updated_at' => now(),
-        ]);
-        // Title still surfaced (or unchecked) — must be left alone.
-        DB::table('streaming_titles')->insert([
-            'id' => 'keep', 'show_type' => 'movie', 'title' => 'Still In Kids',
-            'netflix_kids_surfaced' => true, 'created_at' => now(), 'updated_at' => now(),
-        ]);
-        DB::table('streaming_title_offers')->insert([
-            'title_id' => 'keep', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription',
-            'link' => 'https://www.netflix.com/title/800/', 'source' => 'discovery', 'updated_at' => now(),
-        ]);
 
-        // Browse surfaces a brand-new (unmatched) title — neither 'gone' nor 'keep' is in this run.
-        $this->fakeBrowse(900, 'Brand New Original');
+        // Browse surfaces this exact title this run, and it resolves to 'stale'.
+        $this->fakeBrowse(900, 'Back In Kids');
 
         $this->artisan('streaming:discover-netflix')->assertExitCode(0);
 
-        // The not-surfaced title's discovery offer is reaped; the surfaced one is untouched.
-        $this->assertSame(0, DB::table('streaming_title_offers')->where('title_id', 'gone')->count());
-        $this->assertSame(1, DB::table('streaming_title_offers')->where('title_id', 'keep')->count());
-
-        $meta = json_decode(DB::table('streaming_sync_log')
-            ->where('sync_type', 'discover_netflix')->latest('id')->value('metadata'), true);
-        $this->assertSame(1, $meta['reaped_not_surfaced']);
+        // The discovery offer created in the loop must NOT be reaped.
+        $this->assertDatabaseHas('streaming_title_offers', [
+            'title_id' => 'stale', 'service_id' => 'netflix', 'region' => 'US',
+            'type' => 'subscription', 'source' => 'discovery',
+            'link' => 'https://www.netflix.com/title/900/',
+        ]);
     }
 
     public function test_logs_unmatched_title_without_creating_anything(): void
