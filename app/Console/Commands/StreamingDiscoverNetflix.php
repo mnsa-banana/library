@@ -24,6 +24,10 @@ class StreamingDiscoverNetflix extends Command
 
     public function handle(NetflixKidsClient $netflix, TitleResolver $resolver): int
     {
+        // TitleResolver loads the full ~115k-title catalog into an in-memory index
+        // (~180MB), which overruns PHP's 128M default. Match streaming:backfill's bump.
+        ini_set('memory_limit', '512M');
+
         $log = StreamingSyncLog::create([
             'sync_type' => 'discover_netflix', 'started_at' => now(), 'status' => 'running',
         ]);
