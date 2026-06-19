@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\StreamingSyncLog;
+use App\Models\StreamingTitleOffer;
 use App\Services\NetflixKids\NetflixKidsClient;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -168,8 +169,9 @@ class StreamingVerifyKids extends Command
         $byNf = [];
         $badLinks = 0;
         foreach ($rows as $r) {
-            if (preg_match('#/title/(\d+)#', $r->link, $m)) {
-                $byNf[$r->id] = ['title' => $r->title, 'nfid' => (int) $m[1]];
+            $nfid = StreamingTitleOffer::netflixVideoIdFromLink($r->link);
+            if ($nfid !== null) {
+                $byNf[$r->id] = ['title' => $r->title, 'nfid' => $nfid];
             } else {
                 $badLinks++;
             }

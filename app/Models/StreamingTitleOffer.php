@@ -5,11 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class StreamingTitleOffer extends Model
 {
     protected $table = 'streaming_title_offers';
+
     public $timestamps = false;
+
     protected $guarded = [];
 
     protected $casts = [
@@ -50,5 +53,33 @@ class StreamingTitleOffer extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(StreamingService::class, 'service_id');
+    }
+
+    /** Canonical Netflix web link for a Kids/standard title videoId. */
+    public static function netflixTitleLink(int $videoId): string
+    {
+        return "https://www.netflix.com/title/{$videoId}/";
+    }
+
+    /** Extract the numeric Netflix videoId from a /title/<id>/ link, or null. */
+    public static function netflixVideoIdFromLink(?string $link): ?int
+    {
+        return ($link !== null && preg_match('#/title/(\d+)#', $link, $m)) ? (int) $m[1] : null;
+    }
+
+    /**
+     * Create-or-restamp the canonical source='discovery' Netflix-US subscription
+     * offer for a title. Idempotent: the unique key is
+     * (title_id, service_id, region, type, video_quality), so re-running updates
+     * link + updated_at rather than inserting a duplicate. Used by the discovery
+     * writers (streaming:discover-netflix, streaming:tmdb-backstop).
+     */
+    public static function upsertDiscoveryNetflix(string $titleId, int $videoId): void
+    {
+        DB::table('streaming_title_offers')->updateOrInsert(
+            ['title_id' => $titleId, 'service_id' => 'netflix', 'region' => 'US',
+                'type' => 'subscription', 'video_quality' => null],
+            ['link' => self::netflixTitleLink($videoId), 'source' => 'discovery', 'updated_at' => now()],
+        );
     }
 }
