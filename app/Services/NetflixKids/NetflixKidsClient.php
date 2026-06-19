@@ -5,10 +5,17 @@ namespace App\Services\NetflixKids;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class NetflixKidsClient
 {
+    private const BROWSE_PAGE_SIZE = 50;
+
+    /** Safety cap on genre pages walked. The short/empty-page break is the normal terminator;
+     *  this only bounds a pathological never-shrinking response. 200 pages × 50 = 10,000 ids. */
+    private const BROWSE_MAX_PAGES = 200;
+
     private const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
         .'(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
@@ -87,22 +94,11 @@ class NetflixKidsClient
     {
         $out = [];
         foreach (array_chunk($netflixIds, 48) as $chunk) {
-            $form = ['authURL' => $authUrl];
             $paths = [];
             foreach ($chunk as $id) {
                 $paths[] = json_encode(['videos', (int) $id, ['maturity']]);
             }
-            $resp = $this->sendWithRetry(fn () => Http::asForm()
-                ->withHeaders(['User-Agent' => self::UA, 'Cookie' => $this->cookie])
-                ->timeout(30)
-                ->withBody(
-                    http_build_query($form).'&'.implode('&', array_map(
-                        fn ($p) => 'path='.urlencode($p), $paths
-                    )),
-                    'application/x-www-form-urlencoded'
-                )
-                ->post(rtrim($memberApiUrl, '/').'/pathEvaluator?original_path='
-                    .rawurlencode(self::PATH_EVALUATOR_ORIGINAL_PATH)));
+            $resp = $this->memberFalcor($paths, $memberApiUrl, $authUrl);
 
             // falcor jsonGraph response: maturity is an atom whose payload sits under 'value'
             $videos = $resp->json('jsonGraph.videos', []);
@@ -126,22 +122,30 @@ class NetflixKidsClient
     public function browseGenreVideoIds(int $genreId, string $memberApiUrl, string $authUrl): array
     {
         $ids = [];
-        // 10000 is a safety cap, not the expected terminator: the short-page break
-        // below normally ends the walk. This just bounds a pathological response
-        // that keeps returning full 50-id pages without ever shrinking.
-        for ($from = 0; $from < 10000; $from += 50) {
-            $path = json_encode(['genres', $genreId, 'su', ['from' => $from, 'to' => $from + 49], 'reference', ['title']]);
+        $cappedOut = true;
+        for ($page = 0; $page < self::BROWSE_MAX_PAGES; $page++) {
+            $from = $page * self::BROWSE_PAGE_SIZE;
+            $path = json_encode(['genres', $genreId, 'su',
+                ['from' => $from, 'to' => $from + self::BROWSE_PAGE_SIZE - 1], 'reference', ['title']]);
             $resp = $this->memberFalcor([$path], $memberApiUrl, $authUrl);
             preg_match_all('/\["videos","(\d+)"\]/', $resp->body(), $m);
             if (! $m[1]) {
+                $cappedOut = false;
                 break;
             }
             foreach ($m[1] as $id) {
                 $ids[(int) $id] = true;
             }
-            if (count($m[1]) < 50) {
+            if (count($m[1]) < self::BROWSE_PAGE_SIZE) {
+                $cappedOut = false;
                 break;
             }
+        }
+        if ($cappedOut) {
+            Log::warning('NetflixKids browse: genre '.$genreId.' hit the '.self::BROWSE_MAX_PAGES
+                .'-page cap; catalog may be truncated.', [
+                    'genre' => $genreId, 'collected' => count($ids),
+                ]);
         }
 
         return array_keys($ids);
@@ -224,20 +228,28 @@ class NetflixKidsClient
             ->withBody(json_encode($body), 'application/json')
             ->post(self::GRAPHQL_URL));
 
-        // Each result entity: "displayString":"<title>","unifiedEntity":{"__typename":
-        // "Movie|Show","unifiedEntityId":"Video:<id>","contentAdvisory":{…"maturityLevel":<n>},"videoId":<id>}
+        // Primary: capture EVERY entity (title, type, videoId) — independent of contentAdvisory shape.
+        // A maturity sub-match must never gate entity capture, or a real Kids title becomes
+        // unresolvable if Netflix reshapes contentAdvisory (e.g. nests an object before maturityLevel).
         preg_match_all(
-            '/"displayString":"([^"]+)","unifiedEntity":\{"__typename":"(Movie|Show)",'
-            .'"unifiedEntityId":"Video:(\d+)","contentAdvisory":\{[^{}]*"maturityLevel":(\d+)\}/',
+            '/"displayString":"([^"]+)","unifiedEntity":\{"__typename":"(Movie|Show)","unifiedEntityId":"Video:(\d+)"/',
             $resp->body(), $m, PREG_SET_ORDER);
 
+        $body = $resp->body();
         $out = [];
         foreach ($m as $row) {
+            $videoId = (int) $row[3];
+            // Best-effort maturity: nearest maturityLevel within a bounded window after this
+            // entity's id (char-bounded, so it tolerates nested objects). Null if absent.
+            $maturity = null;
+            if (preg_match('/"unifiedEntityId":"Video:'.$videoId.'".{0,400}?"maturityLevel":(\d+)/s', $body, $mm)) {
+                $maturity = (int) $mm[1];
+            }
             $out[] = [
-                'videoId' => (int) $row[3],
+                'videoId' => $videoId,
                 'title' => $row[1],
                 'type' => $row[2] === 'Movie' ? 'movie' : 'series',
-                'maturity' => (int) $row[4],
+                'maturity' => $maturity,
             ];
         }
 

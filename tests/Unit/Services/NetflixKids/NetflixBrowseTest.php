@@ -46,4 +46,21 @@ class NetflixBrowseTest extends TestCase
         $this->assertSame('Bee Movie', $titles[1000]);
         $this->assertSame('Minions', $titles[2000]);
     }
+
+    public function test_maturity_levels_returns_id_to_level_map(): void
+    {
+        $this->cfg();
+        // Proves the memberFalcor refactor of maturityLevels() is behavior-preserving:
+        // falcor atom payload nests under value.rating.maturityLevel.
+        Http::fake([
+            '*pathEvaluator*' => Http::response('{"jsonGraph":{"videos":{'
+                .'"1000":{"maturity":{"$type":"atom","value":{"rating":{"maturityLevel":70}}}},'
+                .'"2000":{"maturity":{"$type":"atom","value":{"rating":{"maturityLevel":100}}}}}}}', 200),
+        ]);
+
+        $levels = (new NetflixKidsClient)->maturityLevels([1000, 2000], 'https://www.netflix.com/nq/website/memberapi/release', 'auth');
+
+        $this->assertSame(70, $levels[1000]);
+        $this->assertSame(100, $levels[2000]);
+    }
 }
