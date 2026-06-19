@@ -17,6 +17,14 @@ class OpsNightlyDigestTest extends TestCase
     {
         parent::setUp();
         Carbon::setTestNow('2026-06-16 11:00:00');
+        // This test exercises the daily-digest happy path; pin the watch list to the
+        // three daily jobs so the newer weekly/monthly entries (which have no log rows
+        // here, and would correctly read 'no runs yet'→warn) don't make it 'incomplete'.
+        config(['ops.watch' => [
+            ['key' => 'streaming', 'table' => 'streaming_sync_log', 'type' => 'pipeline', 'label' => 'Streaming pipeline', 'cadence' => 'daily'],
+            ['key' => 'verify_kids', 'table' => 'streaming_sync_log', 'type' => 'verify_kids', 'label' => 'Netflix Kids verify', 'cadence' => 'daily'],
+            ['key' => 'book_enrich', 'table' => 'book_sync_log', 'type' => 'enrich', 'label' => 'Book enrich', 'cadence' => 'daily'],
+        ]]);
         // Pipeline started at 09:00 so it predates verify_kids completion at 09:14 — realistic order.
         DB::table('streaming_sync_log')->insert([
             'sync_type' => 'pipeline', 'started_at' => '2026-06-16 09:00:00',

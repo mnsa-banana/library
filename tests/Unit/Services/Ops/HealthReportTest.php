@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Ops;
 
+use App\Models\BookLibraryTitle;
 use App\Services\Ops\HealthReport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -12,10 +13,29 @@ class HealthReportTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** The three daily watch entries, isolated from the real (now 5-entry) config. */
+    private const DAILY_WATCH = [
+        ['key' => 'streaming', 'table' => 'streaming_sync_log', 'type' => 'pipeline', 'label' => 'Streaming pipeline', 'cadence' => 'daily'],
+        ['key' => 'verify_kids', 'table' => 'streaming_sync_log', 'type' => 'verify_kids', 'label' => 'Netflix Kids verify', 'cadence' => 'daily'],
+        ['key' => 'book_enrich', 'table' => 'book_sync_log', 'type' => 'enrich', 'label' => 'Book enrich', 'cadence' => 'daily'],
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
         Carbon::setTestNow('2026-06-16 11:00:00');
+
+        // Pin the staleness map so tests don't depend on the real config values.
+        config([
+            'ops.digest.pipeline_stale_hours' => 26,
+            'ops.digest.cadence_stale_hours' => [
+                'daily' => 26,
+                'weekly' => 192,
+                'monthly' => 768,
+            ],
+            // Default most tests to the three daily jobs; cadence tests override this.
+            'ops.watch' => self::DAILY_WATCH,
+        ]);
     }
 
     protected function tearDown(): void
@@ -103,11 +123,11 @@ class HealthReportTest extends TestCase
     public function test_book_enrich_shows_remaining_and_eta_when_backlog_left(): void
     {
         // 10 titles, 3 enriched → 7 remaining; tonight processed 2 → ETA ~4 more nights
-        \App\Models\BookLibraryTitle::create(['title' => 'Book A', 'enriched_at' => now()->subDay()]);
-        \App\Models\BookLibraryTitle::create(['title' => 'Book B', 'enriched_at' => now()->subDay()]);
-        \App\Models\BookLibraryTitle::create(['title' => 'Book C', 'enriched_at' => now()->subDay()]);
+        BookLibraryTitle::create(['title' => 'Book A', 'enriched_at' => now()->subDay()]);
+        BookLibraryTitle::create(['title' => 'Book B', 'enriched_at' => now()->subDay()]);
+        BookLibraryTitle::create(['title' => 'Book C', 'enriched_at' => now()->subDay()]);
         for ($i = 1; $i <= 7; $i++) {
-            \App\Models\BookLibraryTitle::create(['title' => "Unenriched {$i}"]);
+            BookLibraryTitle::create(['title' => "Unenriched {$i}"]);
         }
 
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00', ['titles_processed' => 2]);
@@ -124,7 +144,7 @@ class HealthReportTest extends TestCase
     {
         // 5 titles, all enriched → 0 remaining
         for ($i = 1; $i <= 5; $i++) {
-            \App\Models\BookLibraryTitle::create(['title' => "Book {$i}", 'enriched_at' => now()->subDay()]);
+            BookLibraryTitle::create(['title' => "Book {$i}", 'enriched_at' => now()->subDay()]);
         }
 
         $this->log('book_sync_log', 'enrich', 'completed', '2026-06-16 10:22:00', ['titles_processed' => 5]);
@@ -136,17 +156,92 @@ class HealthReportTest extends TestCase
         $this->assertStringContainsString('BACKFILL COMPLETE', $job->summary);
     }
 
-    public function test_non_daily_cadence_degrades_to_warn_without_throwing(): void
+    public function test_weekly_job_completed_3_days_ago_is_ok(): void
+    {
+        config(['ops.watch' => [
+            ['key' => 'discover_netflix', 'table' => 'streaming_sync_log', 'type' => 'discover_netflix', 'label' => 'Netflix Kids discover', 'cadence' => 'weekly'],
+        ]]);
+
+        // Completed 3 days ago — well inside the 192h (8-day) weekly window.
+        $this->log('streaming_sync_log', 'discover_netflix', 'completed', '2026-06-13 11:05:00', [
+            'started_at' => '2026-06-13 11:00:00',
+            'metadata' => json_encode([
+                'offers_created' => 12, 'offers_restamped' => 30,
+                'motn_owned_skipped' => 4, 'unmatched_count' => 7,
+            ]),
+        ]);
+
+        $job = collect(HealthReport::build()->jobs)->firstWhere('key', 'discover_netflix');
+        $this->assertSame('ok', $job->verdict);
+        $this->assertStringContainsString('created 12', $job->summary);
+        $this->assertStringContainsString('restamped 30', $job->summary);
+        $this->assertStringContainsString('skipped(MOTN) 4', $job->summary);
+        $this->assertStringContainsString('unmatched 7', $job->summary);
+    }
+
+    public function test_weekly_job_completed_10_days_ago_is_stale_fail(): void
+    {
+        config(['ops.watch' => [
+            ['key' => 'discover_netflix', 'table' => 'streaming_sync_log', 'type' => 'discover_netflix', 'label' => 'Netflix Kids discover', 'cadence' => 'weekly'],
+        ]]);
+
+        // 10 days ago → past the 192h (8-day) weekly window.
+        $this->log('streaming_sync_log', 'discover_netflix', 'completed', '2026-06-06 11:00:00', [
+            'metadata' => json_encode(['offers_created' => 1]),
+        ]);
+
+        $job = collect(HealthReport::build()->jobs)->firstWhere('key', 'discover_netflix');
+        $this->assertSame('fail', $job->verdict);
+    }
+
+    public function test_monthly_job_with_no_runs_is_warn_not_fail(): void
+    {
+        config(['ops.watch' => [
+            ['key' => 'tmdb_backstop', 'table' => 'streaming_sync_log', 'type' => 'tmdb_backstop', 'label' => 'TMDB backstop', 'cadence' => 'monthly'],
+        ]]);
+        // no tmdb_backstop rows at all
+
+        $report = HealthReport::build();
+        $job = collect($report->jobs)->firstWhere('key', 'tmdb_backstop');
+
+        $this->assertSame('warn', $job->verdict);
+        $this->assertSame('no runs yet', $job->summary);
+        // A brand-new periodic job that hasn't run yet must not drag overall to fail.
+        $this->assertNotSame('fail', $report->overall);
+    }
+
+    public function test_failed_periodic_run_is_fail(): void
+    {
+        config(['ops.watch' => [
+            ['key' => 'tmdb_backstop', 'table' => 'streaming_sync_log', 'type' => 'tmdb_backstop', 'label' => 'TMDB backstop', 'cadence' => 'monthly'],
+        ]]);
+
+        $this->log('streaming_sync_log', 'tmdb_backstop', 'failed', '2026-06-16 09:01:00', [
+            'started_at' => '2026-06-16 09:00:00', 'error_message' => 'invalid US Kids session',
+        ]);
+
+        $report = HealthReport::build();
+        $job = collect($report->jobs)->firstWhere('key', 'tmdb_backstop');
+
+        $this->assertSame('fail', $job->verdict);
+        $this->assertStringContainsString('invalid US Kids session', $job->summary);
+        $this->assertSame('fail', $report->overall);
+    }
+
+    public function test_daily_job_behavior_unchanged(): void
     {
         config(['ops.watch' => [
             ['key' => 'streaming', 'table' => 'streaming_sync_log', 'type' => 'pipeline', 'label' => 'Streaming pipeline', 'cadence' => 'daily'],
-            ['key' => 'book_weekly', 'table' => 'book_sync_log', 'type' => 'weekly', 'label' => 'Book weekly', 'cadence' => 'weekly:thu'],
         ]]);
-        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:29:00', ['started_at' => '2026-06-16 09:00:00']);
 
-        $jobs = $this->jobs(HealthReport::build());
-        $this->assertSame('warn', $jobs['book_weekly']);
-        $this->assertSame('ok', $jobs['streaming']); // the daily job is still assessed normally
+        // A daily pipeline that completed 2h ago — within the 26h daily window.
+        $this->log('streaming_sync_log', 'pipeline', 'completed', '2026-06-16 09:00:00', ['started_at' => '2026-06-16 08:30:00']);
+
+        $report = HealthReport::build();
+        $job = collect($report->jobs)->firstWhere('key', 'streaming');
+
+        $this->assertSame('ok', $job->verdict);
+        $this->assertSame('ok', $report->overall);
     }
 
     public function test_verify_kids_warns_when_skipped_in_latest_pipeline(): void

@@ -16,21 +16,10 @@ final class HealthReport
 
     public static function build(): self
     {
-        $staleHours = (int) config('ops.digest.pipeline_stale_hours');
         $jobs = [];
 
         foreach (config('ops.watch', []) as $w) {
-            if (($w['cadence'] ?? null) !== 'daily') {
-                $jobs[] = new JobHealth(
-                    $w['key'] ?? '?',
-                    $w['label'] ?? ($w['key'] ?? '?'),
-                    'warn',
-                    "cadence '".($w['cadence'] ?? 'null')."' not yet supported (digest handles 'daily' only)",
-                );
-
-                continue;
-            }
-            $jobs[] = self::assessDaily($w, $staleHours);
+            $jobs[] = self::assess($w, self::staleHoursFor($w));
         }
 
         self::reconcileVerifyKids($jobs);
@@ -46,12 +35,27 @@ final class HealthReport
         return new self($jobs, $overall);
     }
 
+    /** Staleness window (hours) for a watch entry, derived from its cadence. */
+    private static function staleHoursFor(array $w): int
+    {
+        $cadence = $w['cadence'] ?? 'daily';
+        $map = config('ops.digest.cadence_stale_hours', []);
+
+        return (int) ($map[$cadence] ?? config('ops.digest.pipeline_stale_hours'));
+    }
+
     /** @param array{key:string,table:string,type:string,label:string,cadence:string} $w */
-    private static function assessDaily(array $w, int $staleHours): JobHealth
+    private static function assess(array $w, int $staleHours): JobHealth
     {
         $row = DB::table($w['table'])->where('sync_type', $w['type'])->latest('id')->first();
 
         if ($row === null) {
+            // A freshly-added weekly/monthly job that hasn't hit its first scheduled
+            // run shouldn't read as a hard failure; only daily jobs treat "never run" as a fail.
+            if (($w['cadence'] ?? 'daily') !== 'daily') {
+                return new JobHealth($w['key'], $w['label'], 'warn', 'no runs yet');
+            }
+
             return new JobHealth($w['key'], $w['label'], 'fail', 'no runs ever recorded');
         }
 
@@ -89,6 +93,7 @@ final class HealthReport
 
         if ($w['key'] === 'verify_kids') {
             $m = is_array($row->metadata) ? $row->metadata : (array) json_decode($row->metadata ?? '{}', true);
+
             return $base.' — session OK; checked '.($m['candidates'] ?? '?')
                 .', surfaced '.($m['surfaced'] ?? '?').', pruned '.($m['pruned'] ?? '?');
         }
@@ -110,6 +115,23 @@ final class HealthReport
 
             return $base.' — '.$tonight.' enriched tonight; '
                 ."{$enriched}/{$total} = {$pct}%; {$remaining} remaining".$eta;
+        }
+
+        if ($w['key'] === 'discover_netflix') {
+            $m = is_array($row->metadata) ? $row->metadata : (array) json_decode($row->metadata ?? '{}', true);
+
+            return $base.' — created '.($m['offers_created'] ?? '?')
+                .', restamped '.($m['offers_restamped'] ?? '?')
+                .', skipped(MOTN) '.($m['motn_owned_skipped'] ?? '?')
+                .', unmatched '.($m['unmatched_count'] ?? '?');
+        }
+
+        if ($w['key'] === 'tmdb_backstop') {
+            $m = is_array($row->metadata) ? $row->metadata : (array) json_decode($row->metadata ?? '{}', true);
+
+            return $base.' — checked '.($m['checked'] ?? '?')
+                .', tmdb-netflix '.($m['tmdb_netflix'] ?? '?')
+                .', created '.($m['offers_created'] ?? '?');
         }
 
         if ($w['key'] === 'streaming') {
@@ -144,7 +166,7 @@ final class HealthReport
      * verify_kids run completed, this cycle's Kids check didn't run — downgrade an
      * otherwise-ok verdict so a green line can't sit next to a failed pipeline.
      *
-     * @param JobHealth[] $jobs
+     * @param  JobHealth[]  $jobs
      */
     private static function reconcileVerifyKids(array &$jobs): void
     {
