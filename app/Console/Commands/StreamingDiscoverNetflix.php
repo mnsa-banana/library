@@ -70,7 +70,12 @@ class StreamingDiscoverNetflix extends Command
                         continue;
                     }
                     StreamingTitleOffer::upsertDiscoveryNetflix($titleId, (int) $videoId);
-                    isset($discoveryExisting[$titleId]) ? $restamped++ : $created++;
+                    if (isset($discoveryExisting[$titleId])) {
+                        $restamped++;
+                    } else {
+                        $created++;
+                        $discoveryExisting[$titleId] = true; // a 2nd browse hit on this title is a restamp, not a new create
+                    }
                 }
             }
 
