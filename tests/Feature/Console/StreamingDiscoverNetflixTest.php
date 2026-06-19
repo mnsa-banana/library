@@ -4,6 +4,7 @@ namespace Tests\Feature\Console;
 
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -78,6 +79,69 @@ class StreamingDiscoverNetflixTest extends TestCase
         // No second netflix offer; the motn one is untouched.
         $this->assertSame(1, DB::table('streaming_title_offers')
             ->where('title_id', 'm2')->where('service_id', 'netflix')->count());
+    }
+
+    public function test_restamps_existing_discovery_offer_without_duplicating(): void
+    {
+        $this->title('m3', 'Surfaced Again', 'movie');
+        $old = now()->subDays(30);
+        DB::table('streaming_title_offers')->insert([
+            'title_id' => 'm3', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription',
+            'link' => 'https://www.netflix.com/title/111/', 'source' => 'discovery', 'updated_at' => $old,
+        ]);
+        $this->fakeBrowse(222, 'Surfaced Again');
+
+        $this->artisan('streaming:discover-netflix')->assertExitCode(0);
+
+        // Still exactly one netflix offer, still source='discovery', updated_at re-stamped.
+        $offers = DB::table('streaming_title_offers')
+            ->where('title_id', 'm3')->where('service_id', 'netflix')->get();
+        $this->assertCount(1, $offers);
+        $this->assertSame('discovery', $offers->first()->source);
+        $this->assertTrue(
+            Carbon::parse($offers->first()->updated_at)->gt($old),
+            'updated_at should be newer than the old value'
+        );
+
+        $meta = json_decode(DB::table('streaming_sync_log')
+            ->where('sync_type', 'discover_netflix')->latest('id')->value('metadata'), true);
+        $this->assertSame(1, $meta['offers_restamped']);
+        $this->assertSame(0, $meta['offers_created']);
+    }
+
+    public function test_sweeps_discovery_offer_for_not_surfaced_title(): void
+    {
+        // Title confirmed NOT surfaced by verify-kids, carrying a stale discovery offer.
+        DB::table('streaming_titles')->insert([
+            'id' => 'gone', 'show_type' => 'movie', 'title' => 'No Longer In Kids',
+            'netflix_kids_surfaced' => false, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('streaming_title_offers')->insert([
+            'title_id' => 'gone', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription',
+            'link' => 'https://www.netflix.com/title/700/', 'source' => 'discovery', 'updated_at' => now(),
+        ]);
+        // Title still surfaced (or unchecked) — must be left alone.
+        DB::table('streaming_titles')->insert([
+            'id' => 'keep', 'show_type' => 'movie', 'title' => 'Still In Kids',
+            'netflix_kids_surfaced' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('streaming_title_offers')->insert([
+            'title_id' => 'keep', 'service_id' => 'netflix', 'region' => 'US', 'type' => 'subscription',
+            'link' => 'https://www.netflix.com/title/800/', 'source' => 'discovery', 'updated_at' => now(),
+        ]);
+
+        // Browse surfaces a brand-new (unmatched) title — neither 'gone' nor 'keep' is in this run.
+        $this->fakeBrowse(900, 'Brand New Original');
+
+        $this->artisan('streaming:discover-netflix')->assertExitCode(0);
+
+        // The not-surfaced title's discovery offer is reaped; the surfaced one is untouched.
+        $this->assertSame(0, DB::table('streaming_title_offers')->where('title_id', 'gone')->count());
+        $this->assertSame(1, DB::table('streaming_title_offers')->where('title_id', 'keep')->count());
+
+        $meta = json_decode(DB::table('streaming_sync_log')
+            ->where('sync_type', 'discover_netflix')->latest('id')->value('metadata'), true);
+        $this->assertSame(1, $meta['reaped_not_surfaced']);
     }
 
     public function test_logs_unmatched_title_without_creating_anything(): void

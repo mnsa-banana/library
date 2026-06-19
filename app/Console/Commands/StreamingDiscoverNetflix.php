@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\StreamingSyncLog;
+use App\Models\StreamingTitleOffer;
 use App\Services\NetflixKids\NetflixKidsClient;
 use App\Services\StreamingAvailability\TitleResolver;
 use Illuminate\Console\Command;
@@ -40,8 +41,17 @@ class StreamingDiscoverNetflix extends Command
             $member = $session['member_api_url'];
             $auth = $session['auth_url'];
 
+            // Preload netflix/US offer provenance once (avoids a per-title existence query).
+            $netflixOffers = DB::table('streaming_title_offers')
+                ->where('service_id', 'netflix')->where('region', 'US')
+                ->get(['title_id', 'source']);
+            // title_ids are strings; array_flip + isset keeps lookups O(1) and integer-cast safe.
+            $motnOwned = array_flip($netflixOffers->where('source', 'motn')->pluck('title_id')->all());
+            $discoveryExisting = array_flip($netflixOffers->where('source', 'discovery')->pluck('title_id')->all());
+
             $created = 0;
-            $skipped = 0;
+            $restamped = 0;
+            $skipped = 0;   // MOTN owns it
             $unmatched = [];
 
             foreach (config('services.netflix_kids.browse_genres', []) as $g) {
@@ -54,28 +64,31 @@ class StreamingDiscoverNetflix extends Command
 
                         continue;
                     }
-                    $hasNetflix = DB::table('streaming_title_offers')->where('title_id', $titleId)
-                        ->where('service_id', 'netflix')->where('region', 'US')->exists();
-                    if ($hasNetflix) {
-                        $skipped++;
+                    if (isset($motnOwned[$titleId])) {
+                        $skipped++;   // MOTN is the authoritative owner of this title's Netflix offer.
 
                         continue;
                     }
-                    DB::table('streaming_title_offers')->updateOrInsert(
-                        ['title_id' => $titleId, 'service_id' => 'netflix', 'region' => 'US',
-                            'type' => 'subscription', 'video_quality' => null],
-                        ['link' => "https://www.netflix.com/title/{$videoId}/", 'source' => 'discovery', 'updated_at' => now()],
-                    );
-                    $created++;
+                    StreamingTitleOffer::upsertDiscoveryNetflix($titleId, (int) $videoId);
+                    isset($discoveryExisting[$titleId]) ? $restamped++ : $created++;
                 }
             }
 
+            // Growth bound: drop discovery offers for titles verify-kids has confirmed are NOT
+            // surfaced on Netflix Kids. Safe — never touches surfaced=true or not-yet-checked (null).
+            $reaped = DB::table('streaming_title_offers')
+                ->where('service_id', 'netflix')->where('region', 'US')->where('source', 'discovery')
+                ->whereIn('title_id', fn ($q) => $q->select('id')->from('streaming_titles')
+                    ->where('netflix_kids_surfaced', false))
+                ->delete();
+
             $log->update([
                 'status' => 'completed', 'completed_at' => now(), 'titles_processed' => $created,
-                'metadata' => ['offers_created' => $created, 'already_had' => $skipped,
+                'metadata' => ['offers_created' => $created, 'offers_restamped' => $restamped,
+                    'motn_owned_skipped' => $skipped, 'reaped_not_surfaced' => $reaped,
                     'unmatched_count' => count($unmatched), 'unmatched' => array_slice($unmatched, 0, 200)],
             ]);
-            $this->info("created={$created} already_had={$skipped} unmatched=".count($unmatched));
+            $this->info("created={$created} restamped={$restamped} motn_skipped={$skipped} reaped={$reaped} unmatched=".count($unmatched));
 
             return self::SUCCESS;
         } catch (\Throwable $e) {
