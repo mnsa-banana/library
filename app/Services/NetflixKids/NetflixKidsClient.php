@@ -171,7 +171,7 @@ class NetflixKidsClient
         return $out;
     }
 
-    /** Form-encoded falcor POST to the member-API pathEvaluator (shared by browse + maturity). */
+    /** Form-encoded falcor POST to the member-API pathEvaluator (shared by the genre-browse primitives). */
     private function memberFalcor(array $encodedPaths, string $memberApiUrl, string $authUrl): Response
     {
         return $this->sendWithRetry(fn () => Http::asForm()
