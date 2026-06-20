@@ -41,10 +41,14 @@ Schedule::command('book:enrich')->dailyAt('10:00')->withoutOverlapping()->append
 Schedule::command('ops:nightly-digest')->dailyAt('11:00');
 
 // Monthly Netflix-Kids gap backstop: cross-reference TMDB watch/providers against
-// our offer table and fill in Netflix offers MOTN missed (off-peak from the daily
-// 09:00 pipeline; reads TMDB (free) + a bounded set of Kids searches).
-Schedule::command('streaming:tmdb-backstop')->monthlyOn(1, '11:00')->withoutOverlapping();
+// our offer table and fill in Netflix offers MOTN missed (reads TMDB (free) + a
+// bounded set of Kids searches). 06:00 — earliest slot because a full --limit=0
+// pass can run long; finishing before the 09:00 pipeline lets verify-kids classify
+// the new offers same day, and before the 11:00 digest so it's reported same day.
+Schedule::command('streaming:tmdb-backstop')->monthlyOn(1, '06:00')->withoutOverlapping();
 
 // Weekly Netflix-Kids catalog browse: enumerate the live Kids catalog and fill in
-// offers MOTN missed (off-peak; additive — never un-marks). Saturday 11:00 UTC.
-Schedule::command('streaming:discover-netflix')->weeklyOn(6, '11:00')->withoutOverlapping();
+// offers MOTN missed (additive — never un-marks). Saturday 07:00 UTC — before the
+// 09:00 pipeline (so verify-kids classifies the new offers same day) and before the
+// 11:00 digest (so the same-day digest reports it; an 11:00 run collided with it).
+Schedule::command('streaming:discover-netflix')->weeklyOn(6, '07:00')->withoutOverlapping();

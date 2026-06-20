@@ -153,6 +153,6 @@ class StreamingDiscoverNetflixTest extends TestCase
         $found = collect($schedule->events())->first(
             fn ($e) => str_contains($e->command ?? '', 'streaming:discover-netflix'));
         $this->assertNotNull($found, 'streaming:discover-netflix should be scheduled');
-        $this->assertSame('0 11 * * 6', $found->expression); // Saturday 11:00 UTC
+        $this->assertSame('0 7 * * 6', $found->expression); // Saturday 07:00 UTC (before the 09:00 pipeline + 11:00 digest)
     }
 }

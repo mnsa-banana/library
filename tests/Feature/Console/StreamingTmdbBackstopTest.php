@@ -143,7 +143,7 @@ class StreamingTmdbBackstopTest extends TestCase
         $found = collect($schedule->events())->first(
             fn ($e) => str_contains($e->command ?? '', 'streaming:tmdb-backstop'));
         $this->assertNotNull($found, 'streaming:tmdb-backstop should be scheduled');
-        $this->assertSame('0 11 1 * *', $found->expression); // monthly, 1st, 11:00 UTC
+        $this->assertSame('0 6 1 * *', $found->expression); // monthly, 1st, 06:00 UTC (well before the 11:00 digest)
     }
 
     public function test_skips_titles_that_already_have_a_netflix_offer(): void
