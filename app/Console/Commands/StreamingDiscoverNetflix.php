@@ -61,10 +61,10 @@ class StreamingDiscoverNetflix extends Command
             foreach (config('services.netflix_kids.browse_genres', []) as $g) {
                 $ids = $netflix->browseGenreVideoIds((int) $g['id'], $member, $auth);
                 $titles = $netflix->resolveVideoTitles($ids, $member, $auth);
-                foreach ($titles as $videoId => $title) {
-                    $titleId = $resolver->resolve($title, $g['type']);
+                foreach ($titles as $videoId => $meta) {
+                    $titleId = $resolver->resolve($meta['title'], $g['type'], $meta['year']);
                     if ($titleId === null) {
-                        $unmatched[] = ['videoId' => $videoId, 'title' => $title, 'type' => $g['type']];
+                        $unmatched[] = ['videoId' => $videoId, 'title' => $meta['title'], 'type' => $g['type']];
 
                         continue;
                     }

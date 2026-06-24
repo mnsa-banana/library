@@ -15,7 +15,7 @@ class TitleResolver
      * The candidate data, stored ONCE. Both lookups below hold integer indices
      * into this list rather than copies of the candidate arrays.
      *
-     * @var list<array{id:string, type:string, norm:string, tokens:list<string>}>|null
+     * @var list<array{id:string, type:string, norm:string, tokens:list<string>, year:?int}>|null
      */
     private ?array $candidates = null;
 
@@ -25,7 +25,7 @@ class TitleResolver
     /** @var array<string, list<int>>|null token => candidate indices (Pass 2 inverted index) */
     private ?array $byToken = null;
 
-    public function resolve(string $title, string $type): ?string
+    public function resolve(string $title, string $type, ?int $year = null): ?string
     {
         $this->ensureLoaded();
         $want = $this->norm($title);
@@ -38,10 +38,31 @@ class TitleResolver
         }
 
         // Pass 1: exact normalized title, same type only.
+        //
+        // A name+type can collide across distinct titles (the catalog holds four
+        // "Fearless" movies). Greedily returning the first such candidate is how a
+        // Netflix Kids title got stamped onto the wrong row: byNorm is built
+        // orderBy('id') on a VARCHAR id, so "13144" (the 1993 adult drama) sorts
+        // before "62957" (the 2020 Kids film) and won. So we collect the distinct
+        // same-type exact matches and only return on a unique one; on a collision we
+        // disambiguate by the NEAREST release year to the caller's year (the Netflix
+        // browse supplies one). Nearest, not exact, because the years legitimately
+        // drift — Netflix reports a later season for series (first_air_year ≠ that)
+        // and a platform-add year for movies. We keep a uniqueness guard: only return
+        // when one candidate is strictly closest; a tie (or no candidate year, or no
+        // caller year) returns null so the command logs it rather than guessing —
+        // mirroring Pass 2's conservative ambiguity stance.
+        $exact = [];
         foreach ($this->byNorm[$want] ?? [] as $i) {
             if ($this->candidates[$i]['type'] === $type) {
-                return $this->candidates[$i]['id'];
+                $exact[$this->candidates[$i]['id']] = $this->candidates[$i]['year']; // id => year (id is the PK)
             }
+        }
+        if (count($exact) === 1) {
+            return array_key_first($exact);
+        }
+        if (count($exact) > 1) {
+            return $year !== null ? $this->nearestYear($exact, $year) : null;
         }
 
         // Pass 2: subtitle-tolerant matching, same type.
@@ -125,6 +146,58 @@ class TitleResolver
         return null;
     }
 
+    /**
+     * Pick the candidate whose year is *uniquely* closest to $want among [id => year].
+     * Returns null on a tie for closest, or when no candidate carries a year — never
+     * guesses. A dist-0 (exact) year is just the smallest possible distance, so exact
+     * matches still win when present.
+     *
+     * @param  array<string, ?int>  $byYear  candidate id => its release/first-air year
+     */
+    private function nearestYear(array $byYear, int $want): ?string
+    {
+        $best = null;
+        $bestDist = PHP_INT_MAX;
+        $tie = false;
+        foreach ($byYear as $id => $year) {
+            if ($year === null) {
+                continue;
+            }
+            $dist = abs($year - $want);
+            if ($dist < $bestDist) {
+                $bestDist = $dist;
+                $best = $id;
+                $tie = false;
+            } elseif ($dist === $bestDist) {
+                $tie = true;
+            }
+        }
+
+        return ($best !== null && ! $tie) ? $best : null;
+    }
+
+    /**
+     * Diagnostic: the exact-normalized, same-type candidates a title collides with —
+     * the set Pass 1 disambiguates among. Returns [{id, year}] (empty when nothing
+     * shares the exact name). Lets callers explain why a collision could not be
+     * confidently resolved (e.g. Netflix year matched none of the candidates).
+     *
+     * @return list<array{id:string, year:?int}>
+     */
+    public function exactCandidates(string $title, string $type): array
+    {
+        $this->ensureLoaded();
+        $want = $this->norm($title);
+        $out = [];
+        foreach ($this->byNorm[$want] ?? [] as $i) {
+            if ($this->candidates[$i]['type'] === $type) {
+                $out[] = ['id' => $this->candidates[$i]['id'], 'year' => $this->candidates[$i]['year']];
+            }
+        }
+
+        return $out;
+    }
+
     private function norm(string $s): string
     {
         return preg_replace('/[^a-z0-9]+/', '', strtolower($s));
@@ -176,7 +249,7 @@ class TitleResolver
         $this->candidates = [];
         $this->byNorm = [];
         $this->byToken = [];
-        DB::table('streaming_titles')->select('id', 'title', 'show_type')
+        DB::table('streaming_titles')->select('id', 'title', 'show_type', 'release_year', 'first_air_year')
             ->orderBy('id')->chunk(5000, function ($rows) {
                 foreach ($rows as $r) {
                     $norm = $this->norm($r->title);
@@ -184,11 +257,14 @@ class TitleResolver
                         continue;
                     }
                     $tokens = $this->tokenize($r->title);
+                    // Movies carry release_year, series carry first_air_year.
+                    $year = $r->show_type === 'series' ? $r->first_air_year : $r->release_year;
                     $c = [
                         'id' => $r->id,
                         'type' => $r->show_type,
                         'norm' => $norm,
                         'tokens' => $tokens,
+                        'year' => $year !== null ? (int) $year : null,
                     ];
                     // Store the candidate ONCE; both indices hold its integer
                     // index $i into $this->candidates.

@@ -152,22 +152,35 @@ class NetflixKidsClient
     }
 
     /**
-     * Batch-resolve video ids to titles via the member-API pathEvaluator.
+     * Batch-resolve video ids to {title, year} via the member-API pathEvaluator.
+     * The release year lets TitleResolver disambiguate same-name collisions (the
+     * catalog has four "Fearless" movies); it is best-effort — null when Netflix
+     * omits the leaf — and the title is the guarantee. (Both leaves are valid
+     * falcor paths, so requesting them together stays a single 2xx; an invalid
+     * leaf would 404 the whole batch.)
      *
      * @param  int[]  $videoIds
-     * @return array<int,string> videoId => title
+     * @return array<int, array{title:string, year:?int}> videoId => {title, year}
      */
     public function resolveVideoTitles(array $videoIds, string $memberApiUrl, string $authUrl): array
     {
         $out = [];
         foreach (array_chunk($videoIds, 48) as $chunk) {
-            $paths = array_map(fn ($id) => json_encode(['videos', (int) $id, 'title']), $chunk);
+            $paths = [];
+            foreach ($chunk as $id) {
+                $paths[] = json_encode(['videos', (int) $id, 'title']);
+                $paths[] = json_encode(['videos', (int) $id, 'releaseYear']);
+            }
             $resp = $this->memberFalcor($paths, $memberApiUrl, $authUrl);
             $videos = $resp->json('jsonGraph.videos', []);
             foreach ($chunk as $id) {
                 $title = $videos[(string) $id]['title']['value'] ?? null;
                 if (is_string($title) && $title !== '') {
-                    $out[(int) $id] = $title;
+                    $year = $videos[(string) $id]['releaseYear']['value'] ?? null;
+                    $out[(int) $id] = [
+                        'title' => $title,
+                        'year' => is_numeric($year) ? (int) $year : null,
+                    ];
                 }
             }
         }

@@ -35,16 +35,19 @@ class NetflixBrowseTest extends TestCase
     public function test_resolve_video_titles_batches_and_maps(): void
     {
         $this->cfg();
+        // Title 1000 carries a releaseYear atom; 2000 omits it (year is best-effort).
         Http::fake([
             '*pathEvaluator*' => Http::response('{"jsonGraph":{"videos":{'
-                .'"1000":{"title":{"$type":"atom","value":"Bee Movie"}},'
+                .'"1000":{"title":{"$type":"atom","value":"Bee Movie"},"releaseYear":{"$type":"atom","value":2007}},'
                 .'"2000":{"title":{"$type":"atom","value":"Minions"}}}}}', 200),
         ]);
 
         $titles = (new NetflixKidsClient)->resolveVideoTitles([1000, 2000], 'https://www.netflix.com/nq/website/memberapi/release', 'auth');
 
-        $this->assertSame('Bee Movie', $titles[1000]);
-        $this->assertSame('Minions', $titles[2000]);
+        $this->assertSame('Bee Movie', $titles[1000]['title']);
+        $this->assertSame(2007, $titles[1000]['year']);
+        $this->assertSame('Minions', $titles[2000]['title']);
+        $this->assertNull($titles[2000]['year']);
     }
 
     public function test_maturity_levels_returns_id_to_level_map(): void
